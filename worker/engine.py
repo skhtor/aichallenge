@@ -256,7 +256,9 @@ def run_game(game, botcmds, options):
                     values = stats[key]
                     if type(values) == list:
                         values = '[' + ','.join(map(str,values)) + ']'
-                    verbose_log.write(' {0:^{1}}'.format(values, max(len(key), len(str(values)))))
+                    else:
+                        values = str(values)
+                    verbose_log.write(' {0:^{1}}'.format(values, max(len(key), len(values))))
                 verbose_log.write('\n')
 
             #alive = [game.is_alive(b) for b in range(len(bots))]

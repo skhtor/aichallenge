@@ -331,7 +331,8 @@ def _monitor_file(fd, q):
         if not line:
             q.put(None)
             break
-        line = unicode(line, errors="replace")
+        if isinstance(line, bytes):
+            line = line.decode("utf-8", errors="replace")
         line = line.rstrip('\r\n')
         q.put(line)
 

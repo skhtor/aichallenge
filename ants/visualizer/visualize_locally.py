@@ -23,7 +23,7 @@ def generate(data, generated_path):
         mod_path += '/'
 
     quote_re = re.compile("'")
-    newline_re = re.compile("\s", re.MULTILINE)
+    newline_re = re.compile(r"\s", re.MULTILINE)
     insert_re = re.compile(r"## REPLAY PLACEHOLDER ##")
     path_re = re.compile(r"## PATH PLACEHOLDER ##")
     
