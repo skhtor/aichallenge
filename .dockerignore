@@ -1,0 +1,8 @@
+.git
+server/.venv
+server/bots
+server/replays
+server/data
+server/game_logs
+__pycache__
+*.pyc

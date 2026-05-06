@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Replay - Match #{{ match_id }}</title>
+    <script type="text/javascript" src="/visualizer/js/visualizer.js"></script>
+    <script type="text/javascript">
+        function init() {
+            var options = new Options();
+            options.data_dir = '/visualizer/data/';
+            options.embedded = true;
+            var visualizer = new Visualizer(document.getElementById('viewer'), options);
+            // Fetch replay data and load it
+            fetch('/replay_data/{{ match_id }}')
+                .then(r => r.text())
+                .then(data => visualizer.loadReplayData(data))
+                .catch(e => document.getElementById('viewer').innerHTML = '<p style="color:red;">Failed to load replay</p>');
+        }
+    </script>
+    <style>
+        html, body { margin: 0; padding: 0; background: #1a1a2e; color: #eee; font-family: -apple-system, sans-serif; }
+        #header { padding: 1rem 2rem; background: #16213e; }
+        #header a { color: #e94560; text-decoration: none; }
+        #viewer { width: 100%; height: calc(100vh - 60px); }
+    </style>
+</head>
+<body onload="init()">
+    <div id="header">
+        <a href="/">← Back to Leaderboard</a> &nbsp; Match #{{ match_id }}
+    </div>
+    <div id="viewer"></div>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ bot.name }} - AI Ants Challenge</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #eee; padding: 2rem; max-width: 900px; margin: 0 auto; }
+        a { color: #4ecdc4; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        h1 { color: #e94560; margin-bottom: 0.3rem; }
+        h2 { color: #e94560; margin: 1.5rem 0 0.5rem; }
+        .meta { color: #aaa; margin-bottom: 1.5rem; }
+        .stats { display: flex; gap: 2rem; margin-bottom: 1.5rem; }
+        .stat { background: #16213e; padding: 1rem 1.5rem; border-radius: 8px; text-align: center; }
+        .stat-val { font-size: 1.5rem; font-weight: bold; color: #4ecdc4; }
+        .stat-label { font-size: 0.8rem; color: #aaa; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+        th, td { padding: 0.4rem 0.8rem; text-align: left; border-bottom: 1px solid #333; }
+        th { background: #16213e; color: #e94560; }
+        .elo { color: #4ecdc4; font-weight: bold; }
+        .score { color: #ffd93d; }
+    </style>
+</head>
+<body>
+    <a href="/">← Back</a>
+    <h1>{{ bot.name }}</h1>
+    <div class="meta">Team: {{ bot.team_name }} · Version {{ bot.active_version }}</div>
+
+    <div class="stats">
+        <div class="stat"><div class="stat-val">{{ "%.0f"|format(bot.elo) }}</div><div class="stat-label">ELO</div></div>
+        <div class="stat"><div class="stat-val">{{ bot.games_played }}</div><div class="stat-label">Games</div></div>
+        <div class="stat"><div class="stat-val">{{ bot.wins }}</div><div class="stat-label">Wins</div></div>
+        <div class="stat"><div class="stat-val">{{ "%.0f"|format(bot.wins * 100 / bot.games_played) if bot.games_played > 0 else "0" }}%</div><div class="stat-label">Win Rate</div></div>
+    </div>
+
+    <h2>ELO History</h2>
+    <canvas id="elo-chart" width="800" height="200" style="width:100%;max-width:800px;background:#16213e;border-radius:8px;"></canvas>
+
+    <h2>Versions</h2>
+    <table>
+        <tr><th>Version</th><th>Uploaded</th></tr>
+        {% for v in versions %}
+        <tr>
+            <td>v{{ v.version }}{% if v.version == bot.active_version %} <span style="color:#4ecdc4;">(active)</span>{% endif %}</td>
+            <td>{{ v.uploaded_at[:16] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Recent Matches</h2>
+    <table>
+        <tr><th>Date</th><th>Score</th><th>Status</th><th>ELO Δ</th><th>Turns</th><th></th></tr>
+        {% for m in matches %}
+        <tr>
+            <td>{{ m.played_at[:16] }}</td>
+            <td class="score">{{ m.score }}</td>
+            <td>{{ m.status }}</td>
+            <td class="elo">{{ "%+.1f"|format(m.elo_change) }}</td>
+            <td>{{ m.turns }}</td>
+            <td>{% if m.replay_file %}<a href="/replay/{{ m.match_id }}">▶</a>{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Head-to-Head</h2>
+    <div id="h2h" style="background:#16213e;padding:1rem;border-radius:8px;">
+        <label style="color:#aaa;font-size:0.9rem;">Compare against:</label>
+        <select id="h2h-opponent" style="background:#0f3460;color:#eee;border:1px solid #333;padding:0.3rem;border-radius:4px;margin-left:0.5rem;"></select>
+        <div id="h2h-result" style="margin-top:0.8rem;"></div>
+    </div>
+    <script>
+    const botName = '{{ bot.name }}';
+
+    // ELO chart
+    fetch('/api/elo_history/' + botName)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.length) return;
+            const canvas = document.getElementById('elo-chart');
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            const pad = 40;
+            const elos = data.map(d => d.elo);
+            const min = Math.min(...elos) - 10, max = Math.max(...elos) + 10;
+            const xStep = (w - pad * 2) / Math.max(elos.length - 1, 1);
+
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+                const y = pad + (h - pad * 2) * i / 4;
+                ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+                ctx.fillStyle = '#666'; ctx.font = '11px sans-serif';
+                ctx.fillText(Math.round(max - (max - min) * i / 4), 2, y + 4);
+            }
+            ctx.strokeStyle = '#4ecdc4'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            elos.forEach((elo, i) => {
+                const x = pad + i * xStep;
+                const y = pad + (1 - (elo - min) / (max - min)) * (h - pad * 2);
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+            if (min < 1200 && max > 1200) {
+                const y = pad + (1 - (1200 - min) / (max - min)) * (h - pad * 2);
+                ctx.strokeStyle = '#e9456044'; ctx.setLineDash([4,4]);
+                ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+            }
+        });
+
+    // Head-to-head
+    fetch('/api/leaderboard').then(r => r.json()).then(bots => {
+        const sel = document.getElementById('h2h-opponent');
+        bots.filter(b => b.name !== botName).forEach(b => {
+            const opt = document.createElement('option');
+            opt.value = b.name; opt.textContent = `${b.name} (${Math.round(b.elo)})`;
+            sel.appendChild(opt);
+        });
+        sel.onchange = () => loadH2H(sel.value);
+        if (sel.options.length) loadH2H(sel.value);
+    });
+
+    function loadH2H(opponent) {
+        fetch(`/api/head_to_head/${botName}/${opponent}`).then(r => r.json()).then(d => {
+            const el = document.getElementById('h2h-result');
+            if (!d.matches) { el.innerHTML = '<span style="color:#666;">No matches yet</span>'; return; }
+            const pctA = Math.round(d.wins_a * 100 / d.matches);
+            const pctB = Math.round(d.wins_b * 100 / d.matches);
+            el.innerHTML = `
+                <div style="display:flex;gap:2rem;align-items:center;">
+                    <div><span class="elo" style="font-size:1.3rem;">${d.wins_a}</span> wins</div>
+                    <div style="color:#666;">${d.draws} draws</div>
+                    <div><span style="color:#e94560;font-size:1.3rem;font-weight:bold;">${d.wins_b}</span> wins</div>
+                </div>
+                <div style="margin-top:0.5rem;background:#0f3460;border-radius:4px;height:8px;overflow:hidden;">
+                    <div style="height:100%;width:${pctA}%;background:#4ecdc4;float:left;"></div>
+                    <div style="height:100%;width:${pctB}%;background:#e94560;float:right;"></div>
+                </div>
+                <div style="color:#666;font-size:0.8rem;margin-top:0.3rem;">${d.matches} matches played</div>`;
+        });
+    }
+    </script>
+</body>
+</html>
