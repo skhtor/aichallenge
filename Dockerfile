@@ -2,6 +2,15 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
+# Install language runtimes
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-jdk \
+    g++ \
+    golang-go \
+    nodejs \
+    ruby \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir fastapi uvicorn[standard] python-multipart jinja2
 
 # Copy engine
@@ -9,7 +18,7 @@ COPY ants/ /app/ants/
 COPY worker/ /app/worker/
 
 # Copy server
-COPY server/app.py server/worker.py server/db.py /app/server/
+COPY server/app.py server/worker.py server/db.py server/languages.py /app/server/
 COPY server/templates/ /app/server/templates/
 
 # Copy visualizer assets into static dir

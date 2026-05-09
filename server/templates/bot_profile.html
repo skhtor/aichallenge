@@ -24,7 +24,21 @@
 <body>
     <a href="/">← Back</a>
     <h1>{{ bot.name }}</h1>
-    <div class="meta">Team: {{ bot.team_name }} · Version {{ bot.active_version }}</div>
+    <div class="meta">Team: {{ bot.team_name }} · Version {{ bot.active_version }}{% if not bot.active %} · <span style="color:#e94560;">INACTIVE</span>{% endif %}</div>
+
+    <div class="card" style="background:#16213e;padding:1rem;border-radius:8px;margin-bottom:1.5rem;">
+        <h3 style="margin-bottom:0.5rem;color:#e94560;">Bot Management</h3>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="mgmt-token" placeholder="Team token" style="background:#0f3460;border:1px solid #333;color:#eee;padding:0.4rem 0.8rem;border-radius:4px;flex:1;min-width:200px;">
+            {% if bot.active %}
+            <button onclick="toggleBot(false)" style="background:#e94560;color:#fff;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;">Deactivate</button>
+            {% else %}
+            <button onclick="toggleBot(true)" style="background:#4ecdc4;color:#000;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;">Reactivate</button>
+            {% endif %}
+            <button onclick="deleteBot()" style="background:#333;color:#e94560;border:1px solid #e94560;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;">Delete</button>
+        </div>
+        <div id="mgmt-result" style="margin-top:0.5rem;font-size:0.85rem;"></div>
+    </div>
 
     <div class="stats">
         <div class="stat"><div class="stat-val">{{ "%.0f"|format(bot.elo) }}</div><div class="stat-label">ELO</div></div>
@@ -117,6 +131,27 @@
         sel.onchange = () => loadH2H(sel.value);
         if (sel.options.length) loadH2H(sel.value);
     });
+
+    async function toggleBot(activate) {
+        const token = document.getElementById('mgmt-token').value;
+        if (!token) { document.getElementById('mgmt-result').innerHTML = '<span style="color:#e94560;">Enter your team token</span>'; return; }
+        const action = activate ? 'activate' : 'deactivate';
+        const res = await fetch(`/api/bot/${botName}/${action}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        document.getElementById('mgmt-result').innerHTML = res.ok
+            ? `<span style="color:#4ecdc4;">✓ Bot ${action}d</span>` : `<span style="color:#e94560;">✗ ${data.detail}</span>`;
+        if (res.ok) setTimeout(() => location.reload(), 1000);
+    }
+    async function deleteBot() {
+        const token = document.getElementById('mgmt-token').value;
+        if (!token) { document.getElementById('mgmt-result').innerHTML = '<span style="color:#e94560;">Enter your team token</span>'; return; }
+        if (!confirm('Delete this bot permanently? This cannot be undone.')) return;
+        const res = await fetch(`/api/bot/${botName}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        document.getElementById('mgmt-result').innerHTML = res.ok
+            ? `<span style="color:#4ecdc4;">✓ Bot deleted</span>` : `<span style="color:#e94560;">✗ ${data.detail}</span>`;
+        if (res.ok) setTimeout(() => location.href = '/', 1000);
+    }
 
     function loadH2H(opponent) {
         fetch(`/api/head_to_head/${botName}/${opponent}`).then(r => r.json()).then(d => {

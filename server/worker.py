@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from db import get_db, init_db
+from languages import get_run_command, LANGUAGES
 
 BASE_DIR = Path(__file__).parent
 BOTS_DIR = BASE_DIR / "bots"
@@ -73,16 +74,23 @@ def pick_map():
     return random.choice(all_maps) if all_maps else None
 
 
-def run_single_game(bot_ids, bot_names, bot_versions):
+def run_single_game(bot_ids, bot_names, bot_versions, bot_languages):
     """Run a single 4-player game with resource-limited bots."""
     map_file = pick_map()
     if not map_file:
         return None
 
     bot_cmds = []
-    for name in bot_names:
+    for name, lang in zip(bot_names, bot_languages):
         bot_dir = BOTS_DIR / name
-        bot_cmds.append(f"python3 {bot_dir / 'MyBot.py'}")
+        lang = lang or "python"
+        config = LANGUAGES[lang]
+        # Ensure run.sh exists
+        run_sh = bot_dir / "run.sh"
+        if not run_sh.exists():
+            run_sh.write_text(f"#!/bin/sh\ncd {bot_dir}\n{config['run']}\n")
+            run_sh.chmod(0o755)
+        bot_cmds.append(str(run_sh))
 
     game_id = f"{int(time.time())}_{random.randint(0, 9999)}"
     log_dir = REPLAYS_DIR / game_id
@@ -171,7 +179,7 @@ def game_loop():
     while True:
         try:
             db = get_db()
-            bots = db.execute("SELECT id, name, elo, active_version FROM bots").fetchall()
+            bots = db.execute("SELECT id, name, elo, active_version, language FROM bots WHERE active = 1").fetchall()
             db.close()
 
             if len(bots) < 4:
@@ -184,9 +192,10 @@ def game_loop():
             bot_names = [b["name"] for b in selected]
             bot_elos = [b["elo"] for b in selected]
             bot_versions = [b["active_version"] for b in selected]
+            bot_languages = [b["language"] for b in selected]
 
             print(f"[Worker] Match: {bot_names}")
-            result = run_single_game(bot_ids, bot_names, bot_versions)
+            result = run_single_game(bot_ids, bot_names, bot_versions, bot_languages)
 
             if result is None:
                 time.sleep(2)

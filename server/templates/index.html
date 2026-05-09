@@ -55,8 +55,8 @@
                 <input type="text" name="team_token" required placeholder="Paste your token here">
                 <label>Bot Name</label>
                 <input type="text" name="bot_name" required placeholder="e.g. MyAwesomeBot">
-                <label>Bot File (.py or .zip with MyBot.py)</label>
-                <input type="file" name="file" accept=".py,.zip" required>
+                <label>Bot File (.py, .java, .cc, .cpp, .go, .js, .rb, or .zip)</label>
+                <input type="file" name="file" accept=".py,.java,.cc,.cpp,.go,.js,.rb,.zip" required>
                 <button type="submit">Upload & Validate</button>
             </form>
             <p style="color:#666;font-size:0.8rem;margin-top:0.5rem;">Bot is tested against sample bots before being accepted.</p>
@@ -68,9 +68,9 @@
         <thead><tr><th>#</th><th>Bot</th><th>Team</th><th>ELO</th><th>Games</th><th>Wins</th><th>Win%</th></tr></thead>
         <tbody id="leaderboard">
         {% for bot in bots %}
-        <tr>
+        <tr{% if not bot.active %} style="opacity:0.5;"{% endif %}>
             <td class="rank">{{ loop.index }}</td>
-            <td><a href="/bot/{{ bot.name }}">{{ bot.name }}</a></td>
+            <td><a href="/bot/{{ bot.name }}">{{ bot.name }}</a>{% if not bot.active %} <small style="color:#e94560;">⏸</small>{% endif %}</td>
             <td>{{ bot.team_name }}</td>
             <td class="elo">{{ "%.0f"|format(bot.elo) }}</td>
             <td>{{ bot.games_played }}</td>

@@ -27,10 +27,12 @@ def init_db():
             id INTEGER PRIMARY KEY,
             team_id INTEGER NOT NULL,
             name TEXT UNIQUE NOT NULL,
+            language TEXT DEFAULT 'python',
             elo REAL DEFAULT 1200,
             games_played INTEGER DEFAULT 0,
             wins INTEGER DEFAULT 0,
             active_version INTEGER,
+            active INTEGER DEFAULT 1,
             FOREIGN KEY (team_id) REFERENCES teams(id)
         );
         CREATE TABLE IF NOT EXISTS bot_versions (
@@ -68,5 +70,9 @@ def init_db():
             FOREIGN KEY (match_id) REFERENCES matches(id)
         );
     """)
+    # Migrations
+    cols = [r[1] for r in db.execute("PRAGMA table_info(bots)").fetchall()]
+    if "active" not in cols:
+        db.execute("ALTER TABLE bots ADD COLUMN active INTEGER DEFAULT 1")
     db.commit()
     db.close()

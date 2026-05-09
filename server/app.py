@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 
 from db import get_db, init_db
+from languages import detect_language, compile_bot, get_starter_files_dir, LANGUAGES
 
 BASE_DIR = Path(__file__).parent
 BOTS_DIR = BASE_DIR / "bots"
@@ -36,7 +37,6 @@ def startup():
 def _seed_sample_bots():
     """Register sample bots if they exist on disk but not in DB."""
     db = get_db()
-    # Ensure a default team for samples
     team = db.execute("SELECT id FROM teams WHERE name = 'Sample'").fetchone()
     if not team:
         token = "sample-" + secrets.token_hex(8)
@@ -47,12 +47,21 @@ def _seed_sample_bots():
     team_id = team["id"]
 
     for bot_dir in BOTS_DIR.iterdir():
-        if bot_dir.is_dir() and (bot_dir / "MyBot.py").exists():
+        if bot_dir.is_dir() and not (bot_dir / "run.sh").exists():
+            language = detect_language(bot_dir)
+            if language:
+                config = LANGUAGES[language]
+                run_sh = bot_dir / "run.sh"
+                run_sh.write_text(f"#!/bin/sh\ncd {bot_dir}\n{config['run']}\n")
+                run_sh.chmod(0o755)
+
+        if bot_dir.is_dir() and detect_language(bot_dir):
             name = bot_dir.name
+            lang = detect_language(bot_dir)
             existing = db.execute("SELECT id FROM bots WHERE name = ?", (name,)).fetchone()
             if not existing:
-                db.execute("INSERT INTO bots (name, team_id, active_version) VALUES (?, ?, 1)",
-                           (name, team_id))
+                db.execute("INSERT INTO bots (name, team_id, language, active_version) VALUES (?, ?, ?, 1)",
+                           (name, team_id, lang))
                 db.commit()
                 bot = db.execute("SELECT id FROM bots WHERE name = ?", (name,)).fetchone()
                 db.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (?, 1, ?)",
@@ -152,6 +161,49 @@ def register_team(name: str = Form(...)):
     return {"team": name, "token": token}
 
 
+def _extract_upload(bot_dir: Path, content: bytes, filename: str) -> str | None:
+    """Extract uploaded file to bot_dir. Returns error message or None."""
+    if filename.endswith(".zip"):
+        zip_path = bot_dir / "upload.zip"
+        zip_path.write_bytes(content)
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(bot_dir)
+        zip_path.unlink()
+    elif any(filename.endswith(ext) for ext in (".py", ".java", ".cc", ".cpp", ".go", ".js", ".rb")):
+        # Determine the correct MyBot.* filename
+        ext = Path(filename).suffix
+        entry_names = {"py": "MyBot.py", "java": "MyBot.java", "cc": "MyBot.cc",
+                       "cpp": "MyBot.cpp", "go": "MyBot.go", "js": "MyBot.js", "rb": "MyBot.rb"}
+        target = entry_names.get(ext.lstrip("."), filename)
+        (bot_dir / target).write_bytes(content)
+    else:
+        return "Upload .zip or a source file (.py, .java, .cc, .cpp, .go, .js, .rb)"
+    return None
+
+
+def _setup_bot_language(bot_dir: Path) -> tuple[str | None, str]:
+    """Detect language, copy starter libs, compile. Returns (language, error)."""
+    language = detect_language(bot_dir)
+    if not language:
+        return None, "Could not detect language. Ensure your entry point is named MyBot.py/java/cc/cpp/go/js/rb"
+
+    # Copy starter library files if not already present
+    starter_dir = get_starter_files_dir(language, ANTS_DIR)
+    if starter_dir:
+        for f in starter_dir.iterdir():
+            if f.is_file() and f.name.startswith("MyBot"):
+                continue  # Don't overwrite their bot
+            if f.is_file() and not (bot_dir / f.name).exists():
+                shutil.copy(f, bot_dir / f.name)
+
+    # Compile if needed
+    success, err = compile_bot(bot_dir, language)
+    if not success:
+        return None, f"Compilation failed: {err}"
+
+    return language, ""
+
+
 @app.post("/api/upload")
 async def upload_bot(
     bot_name: str = Form(...),
@@ -171,68 +223,129 @@ async def upload_bot(
         db.close()
         raise HTTPException(400, "Invalid bot name")
 
-    # Check ownership if bot exists
     existing = db.execute("SELECT id, team_id, active_version FROM bots WHERE name = ?", (safe_name,)).fetchone()
     if existing and existing["team_id"] != team["id"]:
         db.close()
         raise HTTPException(403, "Bot belongs to another team")
 
-    # Save file
     bot_dir = BOTS_DIR / safe_name
-    bot_dir.mkdir(exist_ok=True)
+    if bot_dir.exists():
+        shutil.rmtree(bot_dir)
+    bot_dir.mkdir()
 
     content = await file.read()
-    filename = file.filename or "MyBot.py"
-
-    if filename.endswith(".zip"):
-        zip_path = bot_dir / "upload.zip"
-        zip_path.write_bytes(content)
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(bot_dir)
-        zip_path.unlink()
-    elif filename.endswith(".py"):
-        (bot_dir / "MyBot.py").write_bytes(content)
-    else:
+    err = _extract_upload(bot_dir, content, file.filename or "MyBot.py")
+    if err:
         shutil.rmtree(bot_dir)
         db.close()
-        raise HTTPException(400, "Upload .py or .zip")
+        raise HTTPException(400, err)
 
-    if not (bot_dir / "MyBot.py").exists():
+    language, err = _setup_bot_language(bot_dir)
+    if not language:
         shutil.rmtree(bot_dir)
         db.close()
-        raise HTTPException(400, "No MyBot.py found in upload")
-
-    # Copy ants library if not included
-    if not (bot_dir / "ants.py").exists():
-        shutil.copy(ANTS_DIR / "dist" / "sample_bots" / "python" / "ants.py", bot_dir / "ants.py")
+        raise HTTPException(400, err)
 
     # Upsert bot + version
     if existing:
         new_version = (existing["active_version"] or 0) + 1
-        db.execute("UPDATE bots SET active_version = ? WHERE id = ?", (new_version, existing["id"]))
+        db.execute("UPDATE bots SET active_version = ?, language = ? WHERE id = ?",
+                   (new_version, language, existing["id"]))
         db.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (?, ?, ?)",
                    (existing["id"], new_version, datetime.now().isoformat()))
     else:
-        db.execute("INSERT INTO bots (name, team_id, active_version) VALUES (?, ?, 1)",
-                   (safe_name, team["id"]))
+        db.execute("INSERT INTO bots (name, team_id, language, active_version) VALUES (?, ?, ?, 1)",
+                   (safe_name, team["id"], language))
         db.commit()
         bot = db.execute("SELECT id FROM bots WHERE name = ?", (safe_name,)).fetchone()
         db.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (?, 1, ?)",
                    (bot["id"], datetime.now().isoformat()))
     db.commit()
     db.close()
-    return {"status": "ok", "bot": safe_name, "version": new_version if existing else 1}
+    return {"status": "ok", "bot": safe_name, "language": language, "version": new_version if existing else 1}
 
 
 @app.get("/api/leaderboard")
 def api_leaderboard():
     db = get_db()
     bots = db.execute("""
-        SELECT b.name, t.name as team, b.elo, b.games_played, b.wins
+        SELECT b.name, t.name as team, b.elo, b.games_played, b.wins, b.language, b.active
         FROM bots b JOIN teams t ON b.team_id = t.id ORDER BY b.elo DESC
     """).fetchall()
     db.close()
     return [dict(b) for b in bots]
+
+
+@app.post("/api/bot/{bot_name}/deactivate")
+def deactivate_bot(bot_name: str, authorization: str = Header(...)):
+    """Deactivate a bot (remove from matchmaking). Requires team token."""
+    token = authorization.replace("Bearer ", "").strip()
+    db = get_db()
+    team = db.execute("SELECT id FROM teams WHERE token = ?", (token,)).fetchone()
+    if not team:
+        db.close()
+        raise HTTPException(401, "Invalid token")
+    bot = db.execute("SELECT id, team_id FROM bots WHERE name = ?", (bot_name,)).fetchone()
+    if not bot:
+        db.close()
+        raise HTTPException(404, "Bot not found")
+    if bot["team_id"] != team["id"]:
+        db.close()
+        raise HTTPException(403, "Bot belongs to another team")
+    db.execute("UPDATE bots SET active = 0 WHERE id = ?", (bot["id"],))
+    db.commit()
+    db.close()
+    return {"status": "ok", "bot": bot_name, "active": False}
+
+
+@app.post("/api/bot/{bot_name}/activate")
+def activate_bot(bot_name: str, authorization: str = Header(...)):
+    """Reactivate a bot for matchmaking. Requires team token."""
+    token = authorization.replace("Bearer ", "").strip()
+    db = get_db()
+    team = db.execute("SELECT id FROM teams WHERE token = ?", (token,)).fetchone()
+    if not team:
+        db.close()
+        raise HTTPException(401, "Invalid token")
+    bot = db.execute("SELECT id, team_id FROM bots WHERE name = ?", (bot_name,)).fetchone()
+    if not bot:
+        db.close()
+        raise HTTPException(404, "Bot not found")
+    if bot["team_id"] != team["id"]:
+        db.close()
+        raise HTTPException(403, "Bot belongs to another team")
+    db.execute("UPDATE bots SET active = 1 WHERE id = ?", (bot["id"],))
+    db.commit()
+    db.close()
+    return {"status": "ok", "bot": bot_name, "active": True}
+
+
+@app.delete("/api/bot/{bot_name}")
+def delete_bot(bot_name: str, authorization: str = Header(...)):
+    """Delete a bot entirely. Requires team token."""
+    token = authorization.replace("Bearer ", "").strip()
+    db = get_db()
+    team = db.execute("SELECT id FROM teams WHERE token = ?", (token,)).fetchone()
+    if not team:
+        db.close()
+        raise HTTPException(401, "Invalid token")
+    bot = db.execute("SELECT id, team_id FROM bots WHERE name = ?", (bot_name,)).fetchone()
+    if not bot:
+        db.close()
+        raise HTTPException(404, "Bot not found")
+    if bot["team_id"] != team["id"]:
+        db.close()
+        raise HTTPException(403, "Bot belongs to another team")
+    db.execute("DELETE FROM elo_history WHERE bot_id = ?", (bot["id"],))
+    db.execute("DELETE FROM match_players WHERE bot_id = ?", (bot["id"],))
+    db.execute("DELETE FROM bot_versions WHERE bot_id = ?", (bot["id"],))
+    db.execute("DELETE FROM bots WHERE id = ?", (bot["id"],))
+    db.commit()
+    db.close()
+    bot_dir = BOTS_DIR / bot_name
+    if bot_dir.exists():
+        shutil.rmtree(bot_dir)
+    return {"status": "ok", "bot": bot_name, "deleted": True}
 
 
 @app.get("/api/matches")
@@ -380,12 +493,11 @@ async def web_upload(
     bot_name: str = Form(...),
     file: UploadFile = File(...),
 ):
-    """Web form upload — validates bot with a test match before accepting."""
+    """Web form upload — detects language, compiles, validates with test match."""
     import subprocess
     import tempfile
     import random
 
-    # Auth
     db = get_db()
     team = db.execute("SELECT id, name FROM teams WHERE token = ?", (team_token,)).fetchone()
     if not team:
@@ -397,41 +509,37 @@ async def web_upload(
         db.close()
         return HTMLResponse("<h2 style='color:red;'>Invalid bot name</h2><a href='/'>Back</a>", status_code=400)
 
-    # Check ownership
     existing = db.execute("SELECT id, team_id, active_version FROM bots WHERE name = ?", (safe_name,)).fetchone()
     if existing and existing["team_id"] != team["id"]:
         db.close()
         return HTMLResponse("<h2 style='color:red;'>Bot belongs to another team</h2><a href='/'>Back</a>", status_code=403)
 
-    # Save to temp dir for validation
+    # Extract to temp dir
     tmp_dir = Path(tempfile.mkdtemp())
     test_dir = tmp_dir / safe_name
     test_dir.mkdir()
 
     content = await file.read()
-    filename = file.filename or "MyBot.py"
-    if filename.endswith(".zip"):
-        zip_path = test_dir / "upload.zip"
-        zip_path.write_bytes(content)
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(test_dir)
-        zip_path.unlink()
-    elif filename.endswith(".py"):
-        (test_dir / "MyBot.py").write_bytes(content)
-    else:
+    err = _extract_upload(test_dir, content, file.filename or "MyBot.py")
+    if err:
         shutil.rmtree(tmp_dir)
         db.close()
-        return HTMLResponse("<h2 style='color:red;'>Upload .py or .zip only</h2><a href='/'>Back</a>", status_code=400)
+        return HTMLResponse(f"<h2 style='color:red;'>{err}</h2><a href='/'>Back</a>", status_code=400)
 
-    if not (test_dir / "MyBot.py").exists():
+    # Detect language, copy libs, compile
+    language, err = _setup_bot_language(test_dir)
+    if not language:
         shutil.rmtree(tmp_dir)
         db.close()
-        return HTMLResponse("<h2 style='color:red;'>No MyBot.py found in upload</h2><a href='/'>Back</a>", status_code=400)
+        return HTMLResponse(f"<h2 style='color:red;'>{err}</h2><a href='/'>Back</a>", status_code=400)
 
-    if not (test_dir / "ants.py").exists():
-        shutil.copy(ANTS_DIR / "dist" / "sample_bots" / "python" / "ants.py", test_dir / "ants.py")
+    # Write run.sh for validation
+    config = LANGUAGES[language]
+    run_sh = test_dir / "run.sh"
+    run_sh.write_text(f"#!/bin/sh\ncd {test_dir}\n{config['run']}\n")
+    run_sh.chmod(0o755)
 
-    # Validation: run a quick 50-turn test match
+    # Validation: 50-turn test match
     test_map = next((ANTS_DIR / "maps" / "maze").glob("*p04*.map"))
     log_dir = tmp_dir / "logs"
     log_dir.mkdir()
@@ -440,10 +548,10 @@ async def web_upload(
         "--player_seed", "42", "--end_wait=0.1",
         "--turns", "50", "--turntime", "1000", "--loadtime", "3000",
         "--map_file", str(test_map), "--log_dir", str(log_dir), "-R",
-        f"python3 {test_dir / 'MyBot.py'}",
-        f"python3 {BOTS_DIR / 'HunterBot' / 'MyBot.py'}",
-        f"python3 {BOTS_DIR / 'LeftyBot' / 'MyBot.py'}",
-        f"python3 {BOTS_DIR / 'GreedyBot' / 'MyBot.py'}",
+        str(run_sh),
+        str(BOTS_DIR / "HunterBot" / "run.sh"),
+        str(BOTS_DIR / "LeftyBot" / "run.sh"),
+        str(BOTS_DIR / "GreedyBot" / "run.sh"),
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=str(ANTS_DIR))
@@ -456,31 +564,36 @@ async def web_upload(
     if not replay_files:
         shutil.rmtree(tmp_dir)
         db.close()
-        return HTMLResponse(f"<h2 style='color:red;'>Bot crashed during validation</h2><pre>{result.stderr[:500]}</pre><a href='/'>Back</a>", status_code=400)
+        return HTMLResponse(f"<h2 style='color:red;'>Bot failed to run</h2><pre>{result.stderr[:500]}</pre><a href='/'>Back</a>", status_code=400)
 
     with open(replay_files[0]) as f:
         rd = json.load(f)
-    if "error" in rd or rd.get("status", [""])[0] == "crashed":
+    if "error" in rd:
         shutil.rmtree(tmp_dir)
         db.close()
-        return HTMLResponse("<h2 style='color:red;'>Bot crashed during validation test</h2><a href='/'>Back</a>", status_code=400)
+        return HTMLResponse(f"<h2 style='color:red;'>Validation error</h2><pre>{rd['error'][:300]}</pre><a href='/'>Back</a>", status_code=400)
 
     # Validation passed — move to real bot dir
     bot_dir = BOTS_DIR / safe_name
     if bot_dir.exists():
         shutil.rmtree(bot_dir)
     shutil.copytree(test_dir, bot_dir)
+    # Rewrite run.sh with final path
+    final_run_sh = bot_dir / "run.sh"
+    final_run_sh.write_text(f"#!/bin/sh\ncd {bot_dir}\n{config['run']}\n")
+    final_run_sh.chmod(0o755)
     shutil.rmtree(tmp_dir)
 
     # Upsert in DB
     if existing:
         new_version = (existing["active_version"] or 0) + 1
-        db.execute("UPDATE bots SET active_version = ? WHERE id = ?", (new_version, existing["id"]))
+        db.execute("UPDATE bots SET active_version = ?, language = ? WHERE id = ?",
+                   (new_version, language, existing["id"]))
         db.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (?, ?, ?)",
                    (existing["id"], new_version, datetime.now().isoformat()))
     else:
-        db.execute("INSERT INTO bots (name, team_id, active_version) VALUES (?, ?, 1)",
-                   (safe_name, team["id"]))
+        db.execute("INSERT INTO bots (name, team_id, language, active_version) VALUES (?, ?, ?, 1)",
+                   (safe_name, team["id"], language))
         db.commit()
         bot = db.execute("SELECT id FROM bots WHERE name = ?", (safe_name,)).fetchone()
         db.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (?, 1, ?)",

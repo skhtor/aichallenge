@@ -7,7 +7,7 @@ class RandomBot:
         destinations = []
         for a_row, a_col in ants.my_ants():
             # try all directions randomly until one is passable and not occupied
-            directions = AIM.keys()
+            directions = list(AIM.keys())
             shuffle(directions)
             for direction in directions:
                 (n_row, n_col) = ants.destination(a_row, a_col, direction)
