@@ -6,8 +6,11 @@ import resource
 import signal
 import subprocess
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+MELB_TZ = ZoneInfo("Australia/Melbourne")
 
 from db import get_db, init_db
 from languages import get_run_command, LANGUAGES
@@ -149,7 +152,9 @@ def cleanup_old_replays(db):
         (MAX_REPLAYS,)
     ).fetchall()
     for old in old_matches:
-        old_path = REPLAYS_DIR / old["replay_file"]
+        old_path = (REPLAYS_DIR / old["replay_file"]).resolve()
+        if not str(old_path).startswith(str(REPLAYS_DIR.resolve())):
+            continue
         if old_path.exists():
             old_path.unlink()
         parent = old_path.parent
@@ -177,10 +182,12 @@ def game_loop():
     """Continuously pick 4 bots via ELO matchmaking and run matches."""
     print("[Worker] Starting game loop...")
     while True:
+        db = None
         try:
             db = get_db()
             bots = db.execute("SELECT id, name, elo, active_version, language FROM bots WHERE active = 1").fetchall()
             db.close()
+            db = None
 
             if len(bots) < 4:
                 print(f"[Worker] Only {len(bots)} bots, need 4. Waiting...")
@@ -206,7 +213,7 @@ def game_loop():
             db = get_db()
             cur = db.execute(
                 "INSERT INTO matches (played_at, map_file, turns, replay_file) VALUES (?, ?, ?, ?)",
-                (datetime.now().isoformat(), result["map_file"], result["turns"], result["replay_file"])
+                (datetime.now(MELB_TZ).isoformat(), result["map_file"], result["turns"], result["replay_file"])
             )
             match_id = cur.lastrowid
 
@@ -225,7 +232,7 @@ def game_loop():
                 new_elo = bot_elos[i] + elo_changes[i]
                 db.execute(
                     "INSERT INTO elo_history (bot_id, match_id, elo, recorded_at) VALUES (?, ?, ?, ?)",
-                    (bot_id, match_id, new_elo, datetime.now().isoformat())
+                    (bot_id, match_id, new_elo, datetime.now(MELB_TZ).isoformat())
                 )
             db.commit()
 
@@ -237,6 +244,11 @@ def game_loop():
 
         except Exception as e:
             print(f"[Worker] Error: {e}")
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
             time.sleep(5)
 
 

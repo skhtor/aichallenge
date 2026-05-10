@@ -65,13 +65,14 @@
 
     <h2>Leaderboard</h2>
     <table>
-        <thead><tr><th>#</th><th>Bot</th><th>Team</th><th>ELO</th><th>Games</th><th>Wins</th><th>Win%</th></tr></thead>
+        <thead><tr><th>#</th><th>Bot</th><th>Team</th><th>Lang</th><th>ELO</th><th>Games</th><th>Wins</th><th>Win%</th></tr></thead>
         <tbody id="leaderboard">
         {% for bot in bots %}
         <tr{% if not bot.active %} style="opacity:0.5;"{% endif %}>
             <td class="rank">{{ loop.index }}</td>
             <td><a href="/bot/{{ bot.name }}">{{ bot.name }}</a>{% if not bot.active %} <small style="color:#e94560;">⏸</small>{% endif %}</td>
             <td>{{ bot.team_name }}</td>
+            <td><code>{{ bot.language or '?' }}</code></td>
             <td class="elo">{{ "%.0f"|format(bot.elo) }}</td>
             <td>{{ bot.games_played }}</td>
             <td>{{ bot.wins }}</td>
@@ -79,7 +80,7 @@
         </tr>
         {% endfor %}
         {% if not bots %}
-        <tr><td colspan="7" style="color:#666;">No bots yet. Register and upload to start!</td></tr>
+        <tr><td colspan="8" style="color:#666;">No bots yet. Register and upload to start!</td></tr>
         {% endif %}
         </tbody>
     </table>
@@ -89,16 +90,17 @@
     {% for m in matches %}
     <div class="match-card">
         <div class="match-meta">
-            Match #{{ m.match.id }} · {{ m.match.turns }} turns · {{ m.match.map_file }}
+            Match #{{ m.match.id }} · {{ m.match.turns }} turns · <span class="rel-time" data-time="{{ m.match.played_at }}">{{ m.match.played_at[:16] }}</span>
             {% if m.match.replay_file %} · <a href="/replay/{{ m.match.id }}">▶ Watch Replay</a>{% endif %}
         </div>
         <table style="margin:0.5rem 0 0;">
+            {% set max_score = m.players|map(attribute='score')|max %}
             {% for p in m.players %}
-            <tr>
-                <td><a href="/bot/{{ p.bot_name }}">{{ p.bot_name }}</a></td>
+            <tr{% if p.score == max_score %} style="background:#1a3a2a;"{% endif %}>
+                <td><a href="/bot/{{ p.bot_name }}">{{ p.bot_name }}</a>{% if p.score == max_score %} 👑{% endif %}</td>
                 <td class="score">{{ p.score }} pts</td>
                 <td class="status-{{ p.status }}">{{ p.status }}</td>
-                <td class="elo">{{ "%+.1f"|format(p.elo_change) }}</td>
+                <td style="color:{{ '#e94560' if p.elo_change < 0 else '#4ecdc4' if p.elo_change > 0 else '#eee' }};">{{ "%+.1f"|format(p.elo_change) }}</td>
             </tr>
             {% endfor %}
         </table>
@@ -110,6 +112,33 @@
     </div>
 
     <script>
+    // Relative time helper
+    function relTime(iso) {
+        const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+        if (diff < 60) return 'just now';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+        return Math.floor(diff / 86400) + 'd ago';
+    }
+    document.querySelectorAll('.rel-time').forEach(el => {
+        el.textContent = relTime(el.dataset.time);
+    });
+
+    // Token localStorage
+    const tokenInput = document.querySelector('input[name="team_token"]');
+    const saved = localStorage.getItem('ants_token');
+    if (saved && tokenInput) tokenInput.value = saved;
+
+    // Upload form spinner
+    const uploadForm = document.querySelector('form[action="/upload"]');
+    if (uploadForm) uploadForm.onsubmit = () => {
+        const btn = uploadForm.querySelector('button');
+        btn.disabled = true;
+        btn.textContent = '⏳ Validating...';
+        if (tokenInput) localStorage.setItem('ants_token', tokenInput.value);
+    };
+
+    // Registration with copy button
     document.getElementById('register-form').onsubmit = async (e) => {
         e.preventDefault();
         const name = document.getElementById('reg-name').value;
@@ -119,7 +148,9 @@
         const data = await res.json();
         const el = document.getElementById('reg-result');
         if (res.ok) {
-            el.innerHTML = `<span style="color:#4ecdc4;">✓ Registered!</span> Your token: <code>${data.token}</code><br><small style="color:#e94560;">Save this — it cannot be recovered.</small>`;
+            localStorage.setItem('ants_token', data.token);
+            if (tokenInput) tokenInput.value = data.token;
+            el.innerHTML = `<span style="color:#4ecdc4;">✓ Registered!</span> Token: <code id="token-val">${data.token}</code> <button onclick="navigator.clipboard.writeText('${data.token}');this.textContent='✓ Copied'" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.2rem 0.5rem;border-radius:3px;cursor:pointer;font-size:0.8rem;">📋 Copy</button><br><small style="color:#e94560;">Save this — it cannot be recovered.</small>`;
         } else {
             el.innerHTML = `<span style="color:#e94560;">✗ ${data.detail}</span>`;
         }
@@ -133,14 +164,15 @@
         const card = document.createElement('div');
         card.className = 'match-card';
         const replay = match.replay_file ? ` · <a href="/replay/${match.id}">▶ Watch Replay</a>` : '';
+        const maxScore = Math.max(...players.map(p => p.score));
         card.innerHTML = `
-            <div class="match-meta">Match #${match.id} · ${match.turns} turns · ${match.map_file}${replay}</div>
+            <div class="match-meta">Match #${match.id} · ${match.turns} turns · ${relTime(match.played_at)}${replay}</div>
             <table style="margin:0.5rem 0 0;">
-                ${players.map(p => `<tr>
-                    <td><a href="/bot/${p.bot_name}">${p.bot_name}</a></td>
+                ${players.map(p => `<tr${p.score === maxScore ? ' style="background:#1a3a2a;"' : ''}>
+                    <td><a href="/bot/${p.bot_name}">${p.bot_name}</a>${p.score === maxScore ? ' 👑' : ''}</td>
                     <td class="score">${p.score} pts</td>
                     <td class="status-${p.status}">${p.status}</td>
-                    <td class="elo">${p.elo_change >= 0 ? '+' : ''}${p.elo_change.toFixed(1)}</td>
+                    <td style="color:${p.elo_change > 0 ? '#4ecdc4' : p.elo_change < 0 ? '#e94560' : '#eee'};">${p.elo_change >= 0 ? '+' : ''}${p.elo_change.toFixed(1)}</td>
                 </tr>`).join('')}
             </table>`;
         container.insertBefore(card, container.firstChild);
@@ -149,10 +181,11 @@
         // Refresh leaderboard
         fetch('/api/leaderboard').then(r => r.json()).then(bots => {
             const tbody = document.getElementById('leaderboard');
-            tbody.innerHTML = bots.map((b, i) => `<tr>
+            tbody.innerHTML = bots.map((b, i) => `<tr${!b.active ? ' style="opacity:0.5;"' : ''}>
                 <td class="rank">${i + 1}</td>
-                <td><a href="/bot/${b.name}">${b.name}</a></td>
+                <td><a href="/bot/${b.name}">${b.name}</a>${!b.active ? ' <small style="color:#e94560;">⏸</small>' : ''}</td>
                 <td>${b.team}</td>
+                <td><code>${b.language || '?'}</code></td>
                 <td class="elo">${Math.round(b.elo)}</td>
                 <td>${b.games_played}</td>
                 <td>${b.wins}</td>

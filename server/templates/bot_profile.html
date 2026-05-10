@@ -56,7 +56,7 @@
         {% for v in versions %}
         <tr>
             <td>v{{ v.version }}{% if v.version == bot.active_version %} <span style="color:#4ecdc4;">(active)</span>{% endif %}</td>
-            <td>{{ v.uploaded_at[:16] }}</td>
+            <td>{{ v.uploaded_at[:16].replace('T', ' ') }}</td>
         </tr>
         {% endfor %}
     </table>
@@ -66,10 +66,10 @@
         <tr><th>Date</th><th>Score</th><th>Status</th><th>ELO Δ</th><th>Turns</th><th></th></tr>
         {% for m in matches %}
         <tr>
-            <td>{{ m.played_at[:16] }}</td>
+            <td>{{ m.played_at[:16].replace('T', ' ') }}</td>
             <td class="score">{{ m.score }}</td>
             <td>{{ m.status }}</td>
-            <td class="elo">{{ "%+.1f"|format(m.elo_change) }}</td>
+            <td style="color:{{ '#e94560' if m.elo_change < 0 else '#4ecdc4' if m.elo_change > 0 else '#eee' }};">{{ "%+.1f"|format(m.elo_change) }}</td>
             <td>{{ m.turns }}</td>
             <td>{% if m.replay_file %}<a href="/replay/{{ m.match_id }}">▶</a>{% endif %}</td>
         </tr>

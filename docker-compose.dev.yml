@@ -1,0 +1,33 @@
+services:
+  web:
+    build: .
+    user: root
+    command: uvicorn app:app --host 0.0.0.0 --port 5000 --reload
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./server:/app/server
+      - ./ants:/app/ants
+      - bots_data:/app/server/bots
+      - replays_data:/app/server/replays
+      - db_data:/app/server/data
+    restart: unless-stopped
+
+  worker:
+    build: .
+    user: root
+    command: python -u worker.py
+    volumes:
+      - ./server:/app/server
+      - ./ants:/app/ants
+      - bots_data:/app/server/bots
+      - replays_data:/app/server/replays
+      - db_data:/app/server/data
+    restart: unless-stopped
+    depends_on:
+      - web
+
+volumes:
+  bots_data:
+  replays_data:
+  db_data:

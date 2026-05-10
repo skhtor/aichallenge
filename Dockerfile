@@ -32,8 +32,14 @@ RUN mkdir -p /app/server/bots /app/server/replays /app/server/data && \
         mkdir -p /app/server/bots/$bot && \
         cp /app/ants/dist/sample_bots/python/$bot.py /app/server/bots/$bot/MyBot.py && \
         cp /app/ants/dist/sample_bots/python/ants.py /app/server/bots/$bot/ants.py; \
-    done
+    done && \
+    cp /app/ants/dist/sample_bots/python/logutils.py /app/server/bots/GreedyBot/logutils.py
 
 VOLUME ["/app/server/bots", "/app/server/replays", "/app/server/data"]
 EXPOSE 5000
+
+RUN useradd -r -s /bin/false appuser && \
+    chown -R appuser:appuser /app/server/bots /app/server/replays /app/server/data /app/server
+USER appuser
+
 WORKDIR /app/server

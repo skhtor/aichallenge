@@ -1,10 +1,15 @@
 """AI Ants Challenge - Web Server (FastAPI + uvicorn)."""
+import hmac
 import json
 import secrets
 import shutil
+import time
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+MELB_TZ = ZoneInfo("Australia/Melbourne")
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -20,12 +25,70 @@ BOTS_DIR = BASE_DIR / "bots"
 REPLAYS_DIR = BASE_DIR / "replays"
 ANTS_DIR = BASE_DIR.parent / "ants"
 
+MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB
+MAX_ZIP_FILES = 50  # max files in a zip
+MAX_ZIP_EXTRACTED_SIZE = 20 * 1024 * 1024  # 20MB total extracted
+MAX_BOT_NAME_LENGTH = 32
+MAX_BOTS_PER_TEAM = 10
+
+# Simple in-memory rate limiters with bounded size
+_RATE_LIMIT_MAX_ENTRIES = 10000
+
+
+class RateLimiter:
+    """Bounded rate limiter that evicts oldest entries when full."""
+    def __init__(self, cooldown: float, max_entries: int = _RATE_LIMIT_MAX_ENTRIES):
+        self._cooldown = cooldown
+        self._max_entries = max_entries
+        self._times: dict[str, float] = {}
+
+    def is_limited(self, key: str) -> bool:
+        now = time.time()
+        last = self._times.get(key, 0)
+        if now - last < self._cooldown:
+            return True
+        self._times[key] = now
+        if len(self._times) > self._max_entries:
+            # Evict oldest quarter
+            sorted_keys = sorted(self._times, key=self._times.get)
+            for k in sorted_keys[:self._max_entries // 4]:
+                del self._times[k]
+        return False
+
+
+_upload_limiter = RateLimiter(cooldown=30)
+_register_limiter = RateLimiter(cooldown=10)
+_test_limiter = RateLimiter(cooldown=60)
+
+
+def _verify_token(token: str):
+    """Verify a team token using constant-time comparison. Returns team row or None."""
+    db = get_db()
+    # Fetch all tokens and compare in constant time to prevent timing attacks
+    teams = db.execute("SELECT id, name, token FROM teams").fetchall()
+    for team in teams:
+        if hmac.compare_digest(team["token"], token):
+            db.close()
+            return {"id": team["id"], "name": team["name"]}
+    db.close()
+    return None
+
 BOTS_DIR.mkdir(exist_ok=True)
 REPLAYS_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(title="AI Ants Challenge")
 app.mount("/visualizer", StaticFiles(directory=str(BASE_DIR / "static")), name="visualizer")
 jinja_env = Environment(loader=FileSystemLoader(str(BASE_DIR / "templates")), autoescape=True)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    return response
 
 
 @app.on_event("startup")
@@ -41,7 +104,7 @@ def _seed_sample_bots():
     if not team:
         token = "sample-" + secrets.token_hex(8)
         db.execute("INSERT INTO teams (name, token, created_at) VALUES (?, ?, ?)",
-                   ("Sample", token, datetime.now().isoformat()))
+                   ("Sample", token, datetime.now(MELB_TZ).isoformat()))
         db.commit()
         team = db.execute("SELECT id FROM teams WHERE name = 'Sample'").fetchone()
     team_id = team["id"]
@@ -65,7 +128,7 @@ def _seed_sample_bots():
                 db.commit()
                 bot = db.execute("SELECT id FROM bots WHERE name = ?", (name,)).fetchone()
                 db.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (?, 1, ?)",
-                           (bot["id"], datetime.now().isoformat()))
+                           (bot["id"], datetime.now(MELB_TZ).isoformat()))
     db.commit()
     db.close()
 
@@ -114,7 +177,9 @@ def replay_data(match_id: int):
     db.close()
     if not match or not match["replay_file"]:
         raise HTTPException(404, "Replay not found")
-    replay_path = REPLAYS_DIR / match["replay_file"]
+    replay_path = (REPLAYS_DIR / match["replay_file"]).resolve()
+    if not str(replay_path).startswith(str(REPLAYS_DIR.resolve())):
+        raise HTTPException(403, "Invalid replay path")
     if not replay_path.exists():
         raise HTTPException(404, "Replay file missing")
     return FileResponse(replay_path, media_type="application/json")
@@ -146,8 +211,12 @@ def bot_profile(bot_name: str):
 # --- API ---
 
 @app.post("/api/register")
-def register_team(name: str = Form(...)):
+def register_team(name: str = Form(...), request: Request = None):
     """Register a new team and get an auth token."""
+    client_ip = request.client.host if request and request.client else "unknown"
+    if _register_limiter.is_limited(client_ip):
+        raise HTTPException(429, "Too many registrations. Try again later.")
+
     db = get_db()
     existing = db.execute("SELECT id FROM teams WHERE name = ?", (name,)).fetchone()
     if existing:
@@ -155,7 +224,7 @@ def register_team(name: str = Form(...)):
         raise HTTPException(400, "Team name already taken")
     token = secrets.token_hex(16)
     db.execute("INSERT INTO teams (name, token, created_at) VALUES (?, ?, ?)",
-               (name, token, datetime.now().isoformat()))
+               (name, token, datetime.now(MELB_TZ).isoformat()))
     db.commit()
     db.close()
     return {"team": name, "token": token}
@@ -167,6 +236,19 @@ def _extract_upload(bot_dir: Path, content: bytes, filename: str) -> str | None:
         zip_path = bot_dir / "upload.zip"
         zip_path.write_bytes(content)
         with zipfile.ZipFile(zip_path, "r") as zf:
+            members = zf.namelist()
+            if len(members) > MAX_ZIP_FILES:
+                zip_path.unlink()
+                return f"Zip contains too many files (max {MAX_ZIP_FILES})"
+            total_size = sum(info.file_size for info in zf.infolist())
+            if total_size > MAX_ZIP_EXTRACTED_SIZE:
+                zip_path.unlink()
+                return f"Zip extracted size too large (max {MAX_ZIP_EXTRACTED_SIZE // 1024 // 1024}MB)"
+            for member in members:
+                member_path = (bot_dir / member).resolve()
+                if not str(member_path).startswith(str(bot_dir.resolve())):
+                    zip_path.unlink()
+                    return "Invalid zip: contains path traversal"
             zf.extractall(bot_dir)
         zip_path.unlink()
     elif any(filename.endswith(ext) for ext in (".py", ".java", ".cc", ".cpp", ".go", ".js", ".rb")):
@@ -212,13 +294,18 @@ async def upload_bot(
 ):
     """Upload a bot. Requires Authorization header with team token."""
     token = authorization.replace("Bearer ", "").strip()
-    db = get_db()
-    team = db.execute("SELECT id, name FROM teams WHERE token = ?", (token,)).fetchone()
+
+    # Rate limit
+    if _upload_limiter.is_limited(token):
+        raise HTTPException(429, "Upload too frequent. Wait 30 seconds between uploads.")
+
+    team = _verify_token(token)
     if not team:
-        db.close()
         raise HTTPException(401, "Invalid token")
 
-    safe_name = "".join(c for c in bot_name if c.isalnum() or c in "-_")
+    db = get_db()
+
+    safe_name = "".join(c for c in bot_name if c.isalnum() or c in "-_")[:MAX_BOT_NAME_LENGTH]
     if not safe_name:
         db.close()
         raise HTTPException(400, "Invalid bot name")
@@ -227,6 +314,11 @@ async def upload_bot(
     if existing and existing["team_id"] != team["id"]:
         db.close()
         raise HTTPException(403, "Bot belongs to another team")
+    if not existing:
+        bot_count = db.execute("SELECT COUNT(*) as cnt FROM bots WHERE team_id = ?", (team["id"],)).fetchone()["cnt"]
+        if bot_count >= MAX_BOTS_PER_TEAM:
+            db.close()
+            raise HTTPException(400, f"Maximum {MAX_BOTS_PER_TEAM} bots per team")
 
     bot_dir = BOTS_DIR / safe_name
     if bot_dir.exists():
@@ -234,6 +326,10 @@ async def upload_bot(
     bot_dir.mkdir()
 
     content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        shutil.rmtree(bot_dir)
+        db.close()
+        raise HTTPException(413, f"File too large. Maximum size is {MAX_UPLOAD_SIZE // 1024 // 1024}MB.")
     err = _extract_upload(bot_dir, content, file.filename or "MyBot.py")
     if err:
         shutil.rmtree(bot_dir)
@@ -252,14 +348,14 @@ async def upload_bot(
         db.execute("UPDATE bots SET active_version = ?, language = ? WHERE id = ?",
                    (new_version, language, existing["id"]))
         db.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (?, ?, ?)",
-                   (existing["id"], new_version, datetime.now().isoformat()))
+                   (existing["id"], new_version, datetime.now(MELB_TZ).isoformat()))
     else:
         db.execute("INSERT INTO bots (name, team_id, language, active_version) VALUES (?, ?, ?, 1)",
                    (safe_name, team["id"], language))
         db.commit()
         bot = db.execute("SELECT id FROM bots WHERE name = ?", (safe_name,)).fetchone()
         db.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (?, 1, ?)",
-                   (bot["id"], datetime.now().isoformat()))
+                   (bot["id"], datetime.now(MELB_TZ).isoformat()))
     db.commit()
     db.close()
     return {"status": "ok", "bot": safe_name, "language": language, "version": new_version if existing else 1}
@@ -280,11 +376,10 @@ def api_leaderboard():
 def deactivate_bot(bot_name: str, authorization: str = Header(...)):
     """Deactivate a bot (remove from matchmaking). Requires team token."""
     token = authorization.replace("Bearer ", "").strip()
-    db = get_db()
-    team = db.execute("SELECT id FROM teams WHERE token = ?", (token,)).fetchone()
+    team = _verify_token(token)
     if not team:
-        db.close()
         raise HTTPException(401, "Invalid token")
+    db = get_db()
     bot = db.execute("SELECT id, team_id FROM bots WHERE name = ?", (bot_name,)).fetchone()
     if not bot:
         db.close()
@@ -302,11 +397,10 @@ def deactivate_bot(bot_name: str, authorization: str = Header(...)):
 def activate_bot(bot_name: str, authorization: str = Header(...)):
     """Reactivate a bot for matchmaking. Requires team token."""
     token = authorization.replace("Bearer ", "").strip()
-    db = get_db()
-    team = db.execute("SELECT id FROM teams WHERE token = ?", (token,)).fetchone()
+    team = _verify_token(token)
     if not team:
-        db.close()
         raise HTTPException(401, "Invalid token")
+    db = get_db()
     bot = db.execute("SELECT id, team_id FROM bots WHERE name = ?", (bot_name,)).fetchone()
     if not bot:
         db.close()
@@ -324,11 +418,10 @@ def activate_bot(bot_name: str, authorization: str = Header(...)):
 def delete_bot(bot_name: str, authorization: str = Header(...)):
     """Delete a bot entirely. Requires team token."""
     token = authorization.replace("Bearer ", "").strip()
-    db = get_db()
-    team = db.execute("SELECT id FROM teams WHERE token = ?", (token,)).fetchone()
+    team = _verify_token(token)
     if not team:
-        db.close()
         raise HTTPException(401, "Invalid token")
+    db = get_db()
     bot = db.execute("SELECT id, team_id FROM bots WHERE name = ?", (bot_name,)).fetchone()
     if not bot:
         db.close()
@@ -399,11 +492,17 @@ def api_head_to_head(bot_a: str, bot_b: str):
 async def test_match(
     bot_name: str = Form(...),
     file: UploadFile = File(...),
+    request: Request = None,
 ):
     """Run a test match against sample bots without affecting ELO. Returns result."""
     import subprocess
     import tempfile
     import random
+
+    # Rate limit by IP (reuse register rate limiter with longer cooldown)
+    client_ip = request.client.host if request and request.client else "unknown"
+    if _test_limiter.is_limited(client_ip):
+        raise HTTPException(429, "Test matches limited to once per minute.")
 
     safe_name = "".join(c for c in bot_name if c.isalnum() or c in "-_") or "TestBot"
 
@@ -413,11 +512,18 @@ async def test_match(
     bot_dir.mkdir()
 
     content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"File too large. Maximum size is {MAX_UPLOAD_SIZE // 1024 // 1024}MB.")
     filename = file.filename or "MyBot.py"
     if filename.endswith(".zip"):
         zip_path = bot_dir / "upload.zip"
         zip_path.write_bytes(content)
         with zipfile.ZipFile(zip_path, "r") as zf:
+            for member in zf.namelist():
+                member_path = (bot_dir / member).resolve()
+                if not str(member_path).startswith(str(bot_dir.resolve())):
+                    shutil.rmtree(tmp_dir)
+                    raise HTTPException(400, "Invalid zip: contains path traversal")
             zf.extractall(bot_dir)
         zip_path.unlink()
     elif filename.endswith(".py"):
@@ -498,13 +604,16 @@ async def web_upload(
     import tempfile
     import random
 
-    db = get_db()
-    team = db.execute("SELECT id, name FROM teams WHERE token = ?", (team_token,)).fetchone()
+    # Rate limit
+    if _upload_limiter.is_limited(team_token):
+        return HTMLResponse("<h2 style='color:red;'>Upload too frequent. Wait 30 seconds.</h2><a href='/'>Back</a>", status_code=429)
+
+    team = _verify_token(team_token)
     if not team:
-        db.close()
         return HTMLResponse("<h2 style='color:red;'>Invalid token</h2><a href='/'>Back</a>", status_code=401)
 
-    safe_name = "".join(c for c in bot_name if c.isalnum() or c in "-_")
+    db = get_db()
+    safe_name = "".join(c for c in bot_name if c.isalnum() or c in "-_")[:MAX_BOT_NAME_LENGTH]
     if not safe_name:
         db.close()
         return HTMLResponse("<h2 style='color:red;'>Invalid bot name</h2><a href='/'>Back</a>", status_code=400)
@@ -513,6 +622,11 @@ async def web_upload(
     if existing and existing["team_id"] != team["id"]:
         db.close()
         return HTMLResponse("<h2 style='color:red;'>Bot belongs to another team</h2><a href='/'>Back</a>", status_code=403)
+    if not existing:
+        bot_count = db.execute("SELECT COUNT(*) as cnt FROM bots WHERE team_id = ?", (team["id"],)).fetchone()["cnt"]
+        if bot_count >= MAX_BOTS_PER_TEAM:
+            db.close()
+            return HTMLResponse(f"<h2 style='color:red;'>Maximum {MAX_BOTS_PER_TEAM} bots per team</h2><a href='/'>Back</a>", status_code=400)
 
     # Extract to temp dir
     tmp_dir = Path(tempfile.mkdtemp())
@@ -520,6 +634,10 @@ async def web_upload(
     test_dir.mkdir()
 
     content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        shutil.rmtree(tmp_dir)
+        db.close()
+        return HTMLResponse(f"<h2 style='color:red;'>File too large (max {MAX_UPLOAD_SIZE // 1024 // 1024}MB)</h2><a href='/'>Back</a>", status_code=413)
     err = _extract_upload(test_dir, content, file.filename or "MyBot.py")
     if err:
         shutil.rmtree(tmp_dir)
@@ -590,14 +708,14 @@ async def web_upload(
         db.execute("UPDATE bots SET active_version = ?, language = ? WHERE id = ?",
                    (new_version, language, existing["id"]))
         db.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (?, ?, ?)",
-                   (existing["id"], new_version, datetime.now().isoformat()))
+                   (existing["id"], new_version, datetime.now(MELB_TZ).isoformat()))
     else:
         db.execute("INSERT INTO bots (name, team_id, language, active_version) VALUES (?, ?, ?, 1)",
                    (safe_name, team["id"], language))
         db.commit()
         bot = db.execute("SELECT id FROM bots WHERE name = ?", (safe_name,)).fetchone()
         db.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (?, 1, ?)",
-                   (bot["id"], datetime.now().isoformat()))
+                   (bot["id"], datetime.now(MELB_TZ).isoformat()))
     db.commit()
     db.close()
 
@@ -621,23 +739,25 @@ async def live_feed():
         while True:
             await asyncio.sleep(2)
             db = get_db()
-            new_matches = db.execute("""
-                SELECT m.id, m.played_at, m.turns, m.map_file, m.replay_file
-                FROM matches m WHERE m.id > ? ORDER BY m.id
-            """, (last_id,)).fetchall()
-            for match in new_matches:
-                players = db.execute("""
-                    SELECT mp.score, mp.status, mp.elo_change, b.name as bot_name
-                    FROM match_players mp JOIN bots b ON mp.bot_id = b.id
-                    WHERE mp.match_id = ? ORDER BY mp.player_index
-                """, (match["id"],)).fetchall()
-                data = json.dumps({
-                    "match": dict(match),
-                    "players": [dict(p) for p in players]
-                })
-                yield f"data: {data}\n\n"
-                last_id = match["id"]
-            db.close()
+            try:
+                new_matches = db.execute("""
+                    SELECT m.id, m.played_at, m.turns, m.map_file, m.replay_file
+                    FROM matches m WHERE m.id > ? ORDER BY m.id
+                """, (last_id,)).fetchall()
+                for match in new_matches:
+                    players = db.execute("""
+                        SELECT mp.score, mp.status, mp.elo_change, b.name as bot_name
+                        FROM match_players mp JOIN bots b ON mp.bot_id = b.id
+                        WHERE mp.match_id = ? ORDER BY mp.player_index
+                    """, (match["id"],)).fetchall()
+                    data = json.dumps({
+                        "match": dict(match),
+                        "players": [dict(p) for p in players]
+                    })
+                    yield f"data: {data}\n\n"
+                    last_id = match["id"]
+            finally:
+                db.close()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
