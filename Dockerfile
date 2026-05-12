@@ -1,4 +1,12 @@
-FROM python:3.10-slim
+# Stage 1: builder
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+COPY server/requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# Stage 2: runtime
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -11,7 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ruby \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir fastapi uvicorn[standard] python-multipart jinja2 psycopg2-binary
+# Copy installed Python packages from builder
+COPY --from=builder /install /usr/local
 
 # Copy engine
 COPY ants/ /app/ants/
@@ -41,5 +50,8 @@ EXPOSE 5000
 RUN useradd -r -s /bin/false appuser && \
     chown -R appuser:appuser /app/server/bots /app/server/replays /app/server/data /app/server
 USER appuser
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')" || exit 1
 
 WORKDIR /app/server

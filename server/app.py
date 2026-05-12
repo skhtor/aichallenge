@@ -89,6 +89,17 @@ async def security_headers(request: Request, call_next):
     return response
 
 
+@app.get("/health")
+def health():
+    try:
+        with db_readonly() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+        return {"status": "ok", "db": "connected"}
+    except Exception:
+        return JSONResponse({"status": "error", "db": "disconnected"}, status_code=503)
+
+
 @app.on_event("startup")
 def startup():
     init_db()
