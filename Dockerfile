@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ruby \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir fastapi uvicorn[standard] python-multipart jinja2
+RUN pip install --no-cache-dir fastapi uvicorn[standard] python-multipart jinja2 psycopg2-binary
 
 # Copy engine
 COPY ants/ /app/ants/

@@ -9,8 +9,8 @@
         h2 { color: #0f3460; background: #e94560; display: inline-block; padding: 0.3rem 1rem; margin: 1.5rem 0 1rem; }
         a { color: #4ecdc4; text-decoration: none; }
         a:hover { text-decoration: underline; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; }
-        th, td { padding: 0.5rem 1rem; text-align: left; border-bottom: 1px solid #333; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; table-layout: fixed; }
+        th, td { padding: 0.5rem 1rem; text-align: left; border-bottom: 1px solid #333; overflow: hidden; text-overflow: ellipsis; }
         th { background: #16213e; color: #e94560; }
         tr:hover { background: #16213e; }
         .card { background: #16213e; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; }
@@ -25,6 +25,7 @@
         .status-survived { color: #4ecdc4; }
         .status-eliminated { color: #e94560; }
         .match-card { background: #16213e; padding: 1rem; margin-bottom: 0.5rem; border-radius: 4px; }
+        .match-card table { table-layout: auto; }
         .match-meta { color: #666; font-size: 0.85rem; }
         .rank { color: #ffd93d; font-weight: bold; width: 2rem; text-align: center; }
         code { background: #0f3460; padding: 0.2rem 0.5rem; border-radius: 3px; font-size: 0.85rem; }
@@ -65,7 +66,7 @@
 
     <h2>Leaderboard</h2>
     <table>
-        <thead><tr><th>#</th><th>Bot</th><th>Team</th><th>Lang</th><th>ELO</th><th>Games</th><th>Wins</th><th>Win%</th></tr></thead>
+        <thead><tr><th style="width:3%;">#</th><th style="width:25%;">Bot</th><th style="width:20%;">Team</th><th style="width:10%;">Lang</th><th style="width:12%;">ELO</th><th style="width:10%;">Games</th><th style="width:10%;">Wins</th><th style="width:10%;">Win%</th></tr></thead>
         <tbody id="leaderboard">
         {% for bot in bots %}
         <tr{% if not bot.active %} style="opacity:0.5;"{% endif %}>
@@ -73,7 +74,7 @@
             <td><a href="/bot/{{ bot.name }}">{{ bot.name }}</a>{% if not bot.active %} <small style="color:#e94560;">⏸</small>{% endif %}</td>
             <td>{{ bot.team_name }}</td>
             <td><code>{{ bot.language or '?' }}</code></td>
-            <td class="elo">{{ "%.0f"|format(bot.elo) }}</td>
+            <td class="elo">{{ "%.0f"|format(bot.elo) }} <span style="color:#888;font-size:0.8rem;">±{{ "%.0f"|format(bot.rd or 350) }}</span></td>
             <td>{{ bot.games_played }}</td>
             <td>{{ bot.wins }}</td>
             <td>{{ "%.0f"|format(bot.wins * 100 / bot.games_played) if bot.games_played > 0 else "-" }}%</td>
@@ -85,7 +86,7 @@
         </tbody>
     </table>
 
-    <h2>Recent Matches</h2>
+    <h2>Recent Matches <button id="refresh-btn" onclick="showNewMatches()" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.3rem 0.8rem;border-radius:4px;cursor:pointer;font-size:0.85rem;vertical-align:middle;display:none;">🔄 <span id="new-count">0</span> new</button></h2>
     <div id="matches">
     {% for m in matches %}
     <div class="match-card">
@@ -97,7 +98,7 @@
             {% set max_score = m.players|map(attribute='score')|max %}
             {% for p in m.players %}
             <tr{% if p.score == max_score %} style="background:#1a3a2a;"{% endif %}>
-                <td><a href="/bot/{{ p.bot_name }}">{{ p.bot_name }}</a>{% if p.score == max_score %} 👑{% endif %}</td>
+                <td><a href="/bot/{{ p.bot_name }}">{{ p.bot_name }}</a>{% if p.score == max_score %} 👑{% endif %}<span style="color:#666;font-size:0.75rem;"> v{{ p.bot_version or '?' }}</span></td>
                 <td class="score">{{ p.score }} pts</td>
                 <td class="status-{{ p.status }}">{{ p.status }}</td>
                 <td style="color:{{ '#e94560' if p.elo_change < 0 else '#4ecdc4' if p.elo_change > 0 else '#eee' }};">{{ "%+.1f"|format(p.elo_change) }}</td>
@@ -110,6 +111,14 @@
     <p style="color:#666;">No matches yet. Need at least 4 bots to start.</p>
     {% endif %}
     </div>
+
+    {% if total_pages > 1 %}
+    <div style="display:flex;align-items:center;justify-content:center;gap:1rem;margin:1rem 0;">
+        {% if page > 1 %}<a href="?page={{ page - 1 }}" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.4rem 1rem;border-radius:4px;text-decoration:none;">← Previous</a>{% endif %}
+        <span style="color:#aaa;">Page {{ page }} of {{ total_pages }}</span>
+        {% if page < total_pages %}<a href="?page={{ page + 1 }}" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.4rem 1rem;border-radius:4px;text-decoration:none;">Next →</a>{% endif %}
+    </div>
+    {% endif %}
 
     <script>
     // Relative time helper
@@ -156,43 +165,42 @@
         }
     };
 
-    // Live match feed via SSE
-    const evtSource = new EventSource('/api/live');
-    evtSource.onmessage = (e) => {
-        const {match, players} = JSON.parse(e.data);
-        const container = document.getElementById('matches');
-        const card = document.createElement('div');
-        card.className = 'match-card';
-        const replay = match.replay_file ? ` · <a href="/replay/${match.id}">▶ Watch Replay</a>` : '';
-        const maxScore = Math.max(...players.map(p => p.score));
-        card.innerHTML = `
-            <div class="match-meta">Match #${match.id} · ${match.turns} turns · ${relTime(match.played_at)}${replay}</div>
-            <table style="margin:0.5rem 0 0;">
-                ${players.map(p => `<tr${p.score === maxScore ? ' style="background:#1a3a2a;"' : ''}>
-                    <td><a href="/bot/${p.bot_name}">${p.bot_name}</a>${p.score === maxScore ? ' 👑' : ''}</td>
-                    <td class="score">${p.score} pts</td>
-                    <td class="status-${p.status}">${p.status}</td>
-                    <td style="color:${p.elo_change > 0 ? '#4ecdc4' : p.elo_change < 0 ? '#e94560' : '#eee'};">${p.elo_change >= 0 ? '+' : ''}${p.elo_change.toFixed(1)}</td>
-                </tr>`).join('')}
-            </table>`;
-        container.insertBefore(card, container.firstChild);
-        while (container.children.length > 20) container.removeChild(container.lastChild);
+    // Live match feed via SSE — buffers new matches until refresh clicked
+    // Poll for new matches every 10 seconds (lightweight, no held connections)
+    let lastMatchId = {{ matches[0].match.id if matches else 0 }};
+    setInterval(async () => {
+        try {
+            const res = await fetch('/api/matches');
+            const matches = await res.json();
+            const newOnes = matches.filter(m => m.id > lastMatchId);
+            if (newOnes.length > 0) {
+                lastMatchId = Math.max(...newOnes.map(m => m.id));
+                const btn = document.getElementById('refresh-btn');
+                const countEl = document.getElementById('new-count');
+                const current = parseInt(countEl.textContent) || 0;
+                countEl.textContent = current + newOnes.length;
+                btn.style.display = 'inline-block';
+                // Auto-refresh leaderboard
+                const lbRes = await fetch('/api/leaderboard');
+                const bots = await lbRes.json();
+                const tbody = document.getElementById('leaderboard');
+                tbody.innerHTML = bots.map((b, i) => `<tr${!b.active ? ' style="opacity:0.5;"' : ''}>
+                    <td class="rank">${i + 1}</td>
+                    <td><a href="/bot/${b.name}">${b.name}</a>${!b.active ? ' <small style="color:#e94560;">⏸</small>' : ''}</td>
+                    <td>${b.team}</td>
+                    <td><code>${b.language || '?'}</code></td>
+                    <td class="elo">${Math.round(b.elo)} <span style="color:#888;font-size:0.8rem;">±${Math.round(b.rd || 350)}</span></td>
+                    <td>${b.games_played}</td>
+                    <td>${b.wins}</td>
+                    <td>${b.games_played > 0 ? Math.round(b.wins * 100 / b.games_played) : '-'}%</td>
+                </tr>`).join('');
+            }
+        } catch(e) {}
+    }, 10000);
 
-        // Refresh leaderboard
-        fetch('/api/leaderboard').then(r => r.json()).then(bots => {
-            const tbody = document.getElementById('leaderboard');
-            tbody.innerHTML = bots.map((b, i) => `<tr${!b.active ? ' style="opacity:0.5;"' : ''}>
-                <td class="rank">${i + 1}</td>
-                <td><a href="/bot/${b.name}">${b.name}</a>${!b.active ? ' <small style="color:#e94560;">⏸</small>' : ''}</td>
-                <td>${b.team}</td>
-                <td><code>${b.language || '?'}</code></td>
-                <td class="elo">${Math.round(b.elo)}</td>
-                <td>${b.games_played}</td>
-                <td>${b.wins}</td>
-                <td>${b.games_played > 0 ? Math.round(b.wins * 100 / b.games_played) : '-'}%</td>
-            </tr>`).join('');
-        });
-    };
+    function showNewMatches() {
+        location.reload();
+    }
     </script>
 </body>
 </html>

@@ -52,21 +52,31 @@
 
     <h2>Versions</h2>
     <table>
-        <tr><th>Version</th><th>Uploaded</th></tr>
+        <tr><th>Version</th><th>Uploaded</th><th></th></tr>
         {% for v in versions %}
         <tr>
             <td>v{{ v.version }}{% if v.version == bot.active_version %} <span style="color:#4ecdc4;">(active)</span>{% endif %}</td>
             <td>{{ v.uploaded_at[:16].replace('T', ' ') }}</td>
+            <td>{% if v.version != bot.active_version and loop.index <= 5 %}<button onclick="rollback({{ v.version }})" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.2rem 0.6rem;border-radius:3px;cursor:pointer;font-size:0.8rem;">↩ Rollback</button>{% endif %}</td>
         </tr>
         {% endfor %}
     </table>
 
-    <h2>Recent Matches</h2>
+    {% if versions_total_pages > 1 %}
+    <div style="display:flex;align-items:center;justify-content:center;gap:1rem;margin:0 0 1rem;">
+        {% if versions_page > 1 %}<a href="?versions_page={{ versions_page - 1 }}&matches_page={{ matches_page }}" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.4rem 1rem;border-radius:4px;text-decoration:none;">← Previous</a>{% endif %}
+        <span style="color:#aaa;">Page {{ versions_page }} of {{ versions_total_pages }}</span>
+        {% if versions_page < versions_total_pages %}<a href="?versions_page={{ versions_page + 1 }}&matches_page={{ matches_page }}" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.4rem 1rem;border-radius:4px;text-decoration:none;">Next →</a>{% endif %}
+    </div>
+    {% endif %}
+
+    <h2>Recent Matches <button id="refresh-btn" onclick="location.reload()" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.3rem 0.8rem;border-radius:4px;cursor:pointer;font-size:0.85rem;vertical-align:middle;display:none;">🔄 <span id="new-count">0</span> new</button></h2>
     <table>
-        <tr><th>Date</th><th>Score</th><th>Status</th><th>ELO Δ</th><th>Turns</th><th></th></tr>
+        <tr><th>Date</th><th>Ver</th><th>Score</th><th>Status</th><th>ELO Δ</th><th>Turns</th><th></th></tr>
         {% for m in matches %}
         <tr>
             <td>{{ m.played_at[:16].replace('T', ' ') }}</td>
+            <td style="color:#666;">v{{ m.bot_version or '?' }}</td>
             <td class="score">{{ m.score }}</td>
             <td>{{ m.status }}</td>
             <td style="color:{{ '#e94560' if m.elo_change < 0 else '#4ecdc4' if m.elo_change > 0 else '#eee' }};">{{ "%+.1f"|format(m.elo_change) }}</td>
@@ -75,6 +85,14 @@
         </tr>
         {% endfor %}
     </table>
+
+    {% if matches_total_pages > 1 %}
+    <div style="display:flex;align-items:center;justify-content:center;gap:1rem;margin:0 0 1rem;">
+        {% if matches_page > 1 %}<a href="?matches_page={{ matches_page - 1 }}&versions_page={{ versions_page }}" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.4rem 1rem;border-radius:4px;text-decoration:none;">← Previous</a>{% endif %}
+        <span style="color:#aaa;">Page {{ matches_page }} of {{ matches_total_pages }}</span>
+        {% if matches_page < matches_total_pages %}<a href="?matches_page={{ matches_page + 1 }}&versions_page={{ versions_page }}" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.4rem 1rem;border-radius:4px;text-decoration:none;">Next →</a>{% endif %}
+    </div>
+    {% endif %}
 
     <h2>Head-to-Head</h2>
     <div id="h2h" style="background:#16213e;padding:1rem;border-radius:8px;">
@@ -132,6 +150,15 @@
         if (sel.options.length) loadH2H(sel.value);
     });
 
+    async function rollback(version) {
+        const token = document.getElementById('mgmt-token').value;
+        if (!token) { document.getElementById('mgmt-result').innerHTML = '<span style="color:#e94560;">Enter your team token</span>'; return; }
+        const res = await fetch(`/api/bot/${botName}/rollback/${version}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        document.getElementById('mgmt-result').innerHTML = res.ok
+            ? `<span style="color:#4ecdc4;">✓ Rolled back to v${version}</span>` : `<span style="color:#e94560;">✗ ${data.detail}</span>`;
+        if (res.ok) setTimeout(() => location.reload(), 1000);
+    }
     async function toggleBot(activate) {
         const token = document.getElementById('mgmt-token').value;
         if (!token) { document.getElementById('mgmt-result').innerHTML = '<span style="color:#e94560;">Enter your team token</span>'; return; }
@@ -172,6 +199,20 @@
                 <div style="color:#666;font-size:0.8rem;margin-top:0.3rem;">${d.matches} matches played</div>`;
         });
     }
+    // Poll for new matches involving this bot
+    let newMatchCount = 0;
+    setInterval(async () => {
+        try {
+            const res = await fetch('/api/leaderboard');
+            const bots = await res.json();
+            const bot = bots.find(b => b.name === botName);
+            if (bot && bot.games_played > {{ bot.games_played }}) {
+                newMatchCount = bot.games_played - {{ bot.games_played }};
+                document.getElementById('new-count').textContent = newMatchCount;
+                document.getElementById('refresh-btn').style.display = 'inline-block';
+            }
+        } catch(e) {}
+    }, 10000);
     </script>
 </body>
 </html>

@@ -12,7 +12,8 @@ from zoneinfo import ZoneInfo
 
 MELB_TZ = ZoneInfo("Australia/Melbourne")
 
-from db import get_db, init_db
+from db import db_conn, db_readonly, dict_cursor, init_db
+from glicko2 import update_ratings
 from languages import get_run_command, LANGUAGES
 
 BASE_DIR = Path(__file__).parent
@@ -23,41 +24,16 @@ ANTS_DIR = BASE_DIR.parent / "ants"
 REPLAYS_DIR.mkdir(exist_ok=True)
 
 MAX_REPLAYS = 50
-
-
-# --- ELO ---
-
-def expected_score(ra, rb):
-    return 1.0 / (1.0 + 10 ** ((rb - ra) / 400.0))
-
-
-def update_elo(players_elo, scores, k=32):
-    n = len(players_elo)
-    changes = [0.0] * n
-    for i in range(n):
-        for j in range(n):
-            if i == j:
-                continue
-            expected = expected_score(players_elo[i], players_elo[j])
-            if scores[i] > scores[j]:
-                actual = 1.0
-            elif scores[i] == scores[j]:
-                actual = 0.5
-            else:
-                actual = 0.0
-            changes[i] += (k / (n - 1)) * (actual - expected)
-    return changes
+MAX_MATCHES = 5000
+MAX_ELO_HISTORY_PER_BOT = 200
 
 
 # --- Sandboxing ---
 
 def _set_limits():
     """Set resource limits for bot subprocess (called via preexec_fn)."""
-    # 512MB memory limit
     resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
-    # 60s CPU time limit
     resource.setrlimit(resource.RLIMIT_CPU, (60, 60))
-    # No new child processes
     resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
 
 
@@ -85,10 +61,13 @@ def run_single_game(bot_ids, bot_names, bot_versions, bot_languages):
 
     bot_cmds = []
     for name, lang in zip(bot_names, bot_languages):
-        bot_dir = BOTS_DIR / name
+        active_link = BOTS_DIR / name / "active"
+        if active_link.exists():
+            bot_dir = active_link.resolve()
+        else:
+            bot_dir = BOTS_DIR / name
         lang = lang or "python"
         config = LANGUAGES[lang]
-        # Ensure run.sh exists
         run_sh = bot_dir / "run.sh"
         if not run_sh.exists():
             run_sh.write_text(f"#!/bin/sh\ncd {bot_dir}\n{config['run']}\n")
@@ -131,7 +110,6 @@ def run_single_game(bot_ids, bot_names, bot_versions, bot_languages):
         print(f"[Worker] Game error: {replay_data['error'][:200]}")
         return None
 
-    # Inject correct bot names
     replay_data["playernames"] = list(bot_names)
     with open(replay_files[0], "w") as f:
         json.dump(replay_data, f)
@@ -145,12 +123,13 @@ def run_single_game(bot_ids, bot_names, bot_versions, bot_languages):
     }
 
 
-def cleanup_old_replays(db):
+def cleanup_old_replays(conn, cur):
     """Keep only the last MAX_REPLAYS replay files on disk."""
-    old_matches = db.execute(
-        "SELECT id, replay_file FROM matches WHERE replay_file IS NOT NULL ORDER BY id DESC LIMIT -1 OFFSET ?",
+    cur.execute(
+        "SELECT id, replay_file FROM matches WHERE replay_file IS NOT NULL ORDER BY id DESC OFFSET %s",
         (MAX_REPLAYS,)
-    ).fetchall()
+    )
+    old_matches = cur.fetchall()
     for old in old_matches:
         old_path = (REPLAYS_DIR / old["replay_file"]).resolve()
         if not str(old_path).startswith(str(REPLAYS_DIR.resolve())):
@@ -160,9 +139,28 @@ def cleanup_old_replays(db):
         parent = old_path.parent
         if parent != REPLAYS_DIR and parent.exists() and not list(parent.iterdir()):
             parent.rmdir()
-        db.execute("UPDATE matches SET replay_file = NULL WHERE id = ?", (old["id"],))
-    if old_matches:
-        db.commit()
+        cur.execute("UPDATE matches SET replay_file = NULL WHERE id = %s", (old["id"],))
+
+
+def archive_old_data(conn, cur):
+    """Prune old matches and ELO history to keep DB size bounded."""
+    cur.execute(
+        "SELECT id FROM matches ORDER BY id DESC LIMIT 1 OFFSET %s", (MAX_MATCHES,)
+    )
+    cutoff = cur.fetchone()
+    if cutoff:
+        cutoff_id = cutoff["id"]
+        cur.execute("DELETE FROM match_players WHERE match_id <= %s", (cutoff_id,))
+        cur.execute("DELETE FROM matches WHERE id <= %s", (cutoff_id,))
+
+    cur.execute("SELECT id FROM bots")
+    bots = cur.fetchall()
+    for bot in bots:
+        cur.execute("""
+            DELETE FROM elo_history WHERE bot_id = %s AND id NOT IN (
+                SELECT id FROM elo_history WHERE bot_id = %s ORDER BY id DESC LIMIT %s
+            )
+        """, (bot["id"], bot["id"], MAX_ELO_HISTORY_PER_BOT))
 
 
 def select_match_bots(bots):
@@ -170,9 +168,7 @@ def select_match_bots(bots):
     bots = list(bots)
     seed = random.choice(bots)
     others = [b for b in bots if b["id"] != seed["id"]]
-    # Sort by ELO distance from seed, pick 3 closest with some randomness
     others.sort(key=lambda b: abs(b["elo"] - seed["elo"]))
-    # Take from top 6 closest (or all if fewer) to add variety
     pool = others[:min(6, len(others))]
     partners = random.sample(pool, min(3, len(pool)))
     return [seed] + partners
@@ -182,12 +178,11 @@ def game_loop():
     """Continuously pick 4 bots via ELO matchmaking and run matches."""
     print("[Worker] Starting game loop...")
     while True:
-        db = None
         try:
-            db = get_db()
-            bots = db.execute("SELECT id, name, elo, active_version, language FROM bots WHERE active = 1").fetchall()
-            db.close()
-            db = None
+            with db_readonly() as conn:
+                cur = dict_cursor(conn)
+                cur.execute("SELECT id, name, elo, rd, volatility, active_version, language FROM bots WHERE active = 1")
+                bots = cur.fetchall()
 
             if len(bots) < 4:
                 print(f"[Worker] Only {len(bots)} bots, need 4. Waiting...")
@@ -197,7 +192,6 @@ def game_loop():
             selected = select_match_bots(bots)
             bot_ids = [b["id"] for b in selected]
             bot_names = [b["name"] for b in selected]
-            bot_elos = [b["elo"] for b in selected]
             bot_versions = [b["active_version"] for b in selected]
             bot_languages = [b["language"] for b in selected]
 
@@ -208,47 +202,51 @@ def game_loop():
                 time.sleep(2)
                 continue
 
-            elo_changes = update_elo(bot_elos, result["scores"])
+            # Glicko-2 update
+            glicko_players = [
+                {"rating": b["elo"], "rd": b["rd"] or 350, "vol": b["volatility"] or 0.06, "score": result["scores"][i]}
+                for i, b in enumerate(selected)
+            ]
+            updated = update_ratings(glicko_players)
 
-            db = get_db()
-            cur = db.execute(
-                "INSERT INTO matches (played_at, map_file, turns, replay_file) VALUES (?, ?, ?, ?)",
-                (datetime.now(MELB_TZ).isoformat(), result["map_file"], result["turns"], result["replay_file"])
-            )
-            match_id = cur.lastrowid
-
-            max_score = max(result["scores"])
-            for i, bot_id in enumerate(bot_ids):
-                is_winner = 1 if result["scores"][i] == max_score else 0
-                db.execute(
-                    "INSERT INTO match_players (match_id, bot_id, bot_version, player_index, score, status, elo_change) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (match_id, bot_id, bot_versions[i], i, result["scores"][i], result["status"][i], elo_changes[i])
+            with db_conn() as conn:
+                cur = dict_cursor(conn)
+                cur.execute(
+                    "INSERT INTO matches (played_at, map_file, turns, replay_file) VALUES (%s, %s, %s, %s) RETURNING id",
+                    (datetime.now(MELB_TZ).isoformat(), result["map_file"], result["turns"], result["replay_file"])
                 )
-                db.execute(
-                    "UPDATE bots SET elo = elo + ?, games_played = games_played + 1, wins = wins + ? WHERE id = ?",
-                    (elo_changes[i], is_winner, bot_id)
-                )
-                # Record ELO history
-                new_elo = bot_elos[i] + elo_changes[i]
-                db.execute(
-                    "INSERT INTO elo_history (bot_id, match_id, elo, recorded_at) VALUES (?, ?, ?, ?)",
-                    (bot_id, match_id, new_elo, datetime.now(MELB_TZ).isoformat())
-                )
-            db.commit()
+                match_id = cur.fetchone()["id"]
 
-            cleanup_old_replays(db)
-            db.close()
+                max_score = max(result["scores"])
+                for i, bot_id in enumerate(bot_ids):
+                    is_winner = 1 if result["scores"][i] == max_score else 0
+                    elo_change = updated[i]["rating"] - glicko_players[i]["rating"]
+                    cur.execute(
+                        "INSERT INTO match_players (match_id, bot_id, bot_version, player_index, score, status, elo_change) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (match_id, bot_id, bot_versions[i], i, result["scores"][i], result["status"][i], elo_change)
+                    )
+                    cur.execute(
+                        "UPDATE bots SET elo = %s, rd = %s, volatility = %s, games_played = games_played + 1, wins = wins + %s WHERE id = %s",
+                        (updated[i]["rating"], updated[i]["rd"], updated[i]["vol"], is_winner, bot_id)
+                    )
+                    cur.execute(
+                        "INSERT INTO elo_history (bot_id, match_id, elo, recorded_at) VALUES (%s, %s, %s, %s)",
+                        (bot_id, match_id, updated[i]["rating"], datetime.now(MELB_TZ).isoformat())
+                    )
 
+                cleanup_old_replays(conn, cur)
+
+                cur.execute("SELECT COUNT(*) as n FROM matches")
+                match_count = cur.fetchone()["n"]
+                if match_count % 100 == 0:
+                    archive_old_data(conn, cur)
+
+            elo_changes = [updated[i]["rating"] - glicko_players[i]["rating"] for i in range(len(selected))]
             print(f"[Worker] Done: scores={result['scores']} elo=[{', '.join(f'{c:+.1f}' for c in elo_changes)}]")
             time.sleep(1)
 
         except Exception as e:
             print(f"[Worker] Error: {e}")
-            if db:
-                try:
-                    db.close()
-                except Exception:
-                    pass
             time.sleep(5)
 
 
