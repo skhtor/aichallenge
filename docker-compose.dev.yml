@@ -19,9 +19,9 @@ services:
   web:
     build: .
     user: root
-    command: uvicorn app:app --host 0.0.0.0 --port 5000 --workers 4
+    command: uvicorn app:app --host 0.0.0.0 --port 5001 --workers 4
     ports:
-      - "5000:5000"
+      - "5001:5001"
     environment:
       DATABASE_URL: postgresql://ants:ants@db:5432/ants
       SEED_SAMPLE_BOTS: "true"

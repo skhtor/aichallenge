@@ -33,8 +33,8 @@ MAX_ELO_HISTORY_PER_BOT = 200
 def _set_limits():
     """Set resource limits for bot subprocess (called via preexec_fn)."""
     resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
-    resource.setrlimit(resource.RLIMIT_CPU, (60, 60))
-    resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
+    resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
+    resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
 
 
 # --- Game Logic ---
@@ -93,7 +93,7 @@ def run_single_game(bot_ids, bot_names, bot_versions, bot_languages):
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=300,
-            cwd=str(ANTS_DIR)
+            cwd=str(ANTS_DIR), preexec_fn=_set_limits
         )
     except subprocess.TimeoutExpired:
         return None

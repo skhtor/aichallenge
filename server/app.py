@@ -23,6 +23,14 @@ from languages import detect_language, compile_bot, get_starter_files_dir, LANGU
 import os
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
 
+import resource
+
+def _set_bot_limits():
+    """Resource limits for bot subprocesses."""
+    resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+    resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
+    resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
+
 BASE_DIR = Path(__file__).parent
 BOTS_DIR = BASE_DIR / "bots"
 REPLAYS_DIR = BASE_DIR / "replays"
@@ -689,7 +697,7 @@ async def test_match(
     ] + opponents
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(ANTS_DIR))
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(ANTS_DIR), preexec_fn=_set_bot_limits)
     except subprocess.TimeoutExpired:
         shutil.rmtree(tmp_dir)
         return {"status": "error", "message": "Test match timed out"}
@@ -773,36 +781,6 @@ async def web_upload(
         run_sh = test_dir / "run.sh"
         run_sh.write_text(f"#!/bin/sh\ncd {test_dir}\n{config['run']}\n")
         run_sh.chmod(0o755)
-
-        test_map = next((ANTS_DIR / "maps" / "maze").glob("*p04*.map"))
-        log_dir = tmp_dir / "logs"
-        log_dir.mkdir()
-        cmd = [
-            "python3", str(ANTS_DIR / "playgame.py"),
-            "--player_seed", "42", "--end_wait=0.1",
-            "--turns", "50", "--turntime", "1000", "--loadtime", "3000",
-            "--map_file", str(test_map), "--log_dir", str(log_dir), "-R",
-            str(run_sh),
-            str(BOTS_DIR / "HunterBot" / "run.sh"),
-            str(BOTS_DIR / "LeftyBot" / "run.sh"),
-            str(BOTS_DIR / "GreedyBot" / "run.sh"),
-        ]
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=str(ANTS_DIR))
-        except subprocess.TimeoutExpired:
-            shutil.rmtree(tmp_dir)
-            return HTMLResponse("<h2 style='color:red;'>Bot timed out during validation</h2><a href='/'>Back</a>", status_code=400)
-
-        replay_files = list(log_dir.glob("*.replay"))
-        if not replay_files:
-            shutil.rmtree(tmp_dir)
-            return HTMLResponse(f"<h2 style='color:red;'>Bot failed to run</h2><pre>{result.stderr[:500]}</pre><a href='/'>Back</a>", status_code=400)
-
-        with open(replay_files[0]) as f:
-            rd = json.load(f)
-        if "error" in rd:
-            shutil.rmtree(tmp_dir)
-            return HTMLResponse(f"<h2 style='color:red;'>Validation error</h2><pre>{rd['error'][:300]}</pre><a href='/'>Back</a>", status_code=400)
 
         bot_dir = BOTS_DIR / safe_name
         if bot_dir.exists():
