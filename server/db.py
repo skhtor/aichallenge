@@ -114,6 +114,13 @@ def init_db():
                 recorded_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS invite_codes (
+                code TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                used_by INTEGER REFERENCES teams(id),
+                used_at TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_match_players_match_id ON match_players(match_id);
             CREATE INDEX IF NOT EXISTS idx_match_players_bot_id ON match_players(bot_id);
             CREATE INDEX IF NOT EXISTS idx_elo_history_bot_id ON elo_history(bot_id);

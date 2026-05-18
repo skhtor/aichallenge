@@ -20,6 +20,9 @@ from jinja2 import Environment, FileSystemLoader
 from db import db_conn, db_readonly, dict_cursor, init_db
 from languages import detect_language, compile_bot, get_starter_files_dir, LANGUAGES
 
+import os
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
+
 BASE_DIR = Path(__file__).parent
 BOTS_DIR = BASE_DIR / "bots"
 REPLAYS_DIR = BASE_DIR / "replays"
@@ -58,6 +61,7 @@ class RateLimiter:
 _upload_limiter = RateLimiter(cooldown=30)
 _register_limiter = RateLimiter(cooldown=10)
 _test_limiter = RateLimiter(cooldown=10)
+_admin_limiter = RateLimiter(cooldown=5)
 
 
 def _verify_token(token: str):
@@ -259,22 +263,49 @@ def bot_profile(bot_name: str, request: Request):
 # --- API ---
 
 @app.post("/api/register")
-def register_team(name: str = Form(...), request: Request = None):
-    """Register a new team and get an auth token."""
+def register_team(name: str = Form(...), invite_code: str = Form(...), request: Request = None):
+    """Register a new team with an invite code and get an auth token."""
     client_ip = request.client.host if request and request.client else "unknown"
     if _register_limiter.is_limited(client_ip):
         raise HTTPException(429, "Too many registrations. Try again later.")
 
     with db_conn() as conn:
         cur = dict_cursor(conn)
+        cur.execute("SELECT code, used_by FROM invite_codes WHERE code = %s", (invite_code,))
+        invite = cur.fetchone()
+        if not invite:
+            raise HTTPException(400, "Invalid invite code")
+        if invite["used_by"] is not None:
+            raise HTTPException(400, "Invite code already used")
+
         cur.execute("SELECT id FROM teams WHERE name = %s", (name,))
         existing = cur.fetchone()
         if existing:
             raise HTTPException(400, "Team name already taken")
         token = secrets.token_hex(16)
-        cur.execute("INSERT INTO teams (name, token, created_at) VALUES (%s, %s, %s)",
+        cur.execute("INSERT INTO teams (name, token, created_at) VALUES (%s, %s, %s) RETURNING id",
                     (name, token, datetime.now(MELB_TZ).isoformat()))
+        team = cur.fetchone()
+        cur.execute("UPDATE invite_codes SET used_by = %s, used_at = %s WHERE code = %s",
+                    (team["id"], datetime.now(MELB_TZ).isoformat(), invite_code))
     return {"team": name, "token": token}
+
+
+@app.post("/api/admin/invite-codes")
+def generate_invite_codes(count: int = Form(default=1), authorization: str = Header(...), request: Request = None):
+    """Generate invite codes. Requires ADMIN_SECRET in Authorization header."""
+    client_ip = request.client.host if request and request.client else "unknown"
+    if _admin_limiter.is_limited(client_ip):
+        raise HTTPException(429, "Too many requests")
+    if not ADMIN_SECRET or not hmac.compare_digest(authorization, ADMIN_SECRET):
+        raise HTTPException(403, "Forbidden")
+    codes = [secrets.token_urlsafe(12) for _ in range(min(count, 50))]
+    with db_conn() as conn:
+        cur = conn.cursor()
+        for code in codes:
+            cur.execute("INSERT INTO invite_codes (code, created_at) VALUES (%s, %s)",
+                        (code, datetime.now(MELB_TZ).isoformat()))
+    return {"codes": codes}
 
 
 def _extract_upload(bot_dir: Path, content: bytes, filename: str) -> str | None:
@@ -573,14 +604,22 @@ def api_head_to_head(bot_a: str, bot_b: str):
 async def test_match(
     bot_name: str = Form(...),
     file: UploadFile = File(...),
+    authorization: str = Header(...),
     request: Request = None,
 ):
-    """Run a test match against sample bots without affecting ELO. Returns result."""
+    """Run a test match against sample bots without affecting ELO. Requires auth."""
     import subprocess
     import tempfile
     import random
 
-    client_ip = request.client.host if request and request.client else "unknown"
+    token = authorization.replace("Bearer ", "").strip()
+    team = _verify_token(token)
+    if not team:
+        raise HTTPException(401, "Invalid token")
+
+    if _test_limiter.is_limited(token):
+        raise HTTPException(429, "Too many test requests. Wait 10 seconds.")
+
     safe_name = "".join(c for c in bot_name if c.isalnum() or c in "-_") or "TestBot"
 
     tmp_dir = Path(tempfile.mkdtemp())
