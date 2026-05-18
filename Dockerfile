@@ -10,14 +10,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install language runtimes
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    default-jdk \
+# Install language runtimes (headless JDK, no docs/man pages)
+RUN echo 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/locale/*' > /etc/dpkg/dpkg.cfg.d/excludes && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    default-jdk-headless \
     g++ \
     golang-go \
     nodejs \
     ruby \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man /usr/share/locale
 
 # Copy installed Python packages from builder
 COPY --from=builder /install /usr/local
@@ -30,10 +31,11 @@ COPY worker/ /app/worker/
 COPY server/app.py server/worker.py server/db.py server/languages.py server/glicko2.py /app/server/
 COPY server/templates/ /app/server/templates/
 
-# Copy visualizer assets into static dir
+# Copy static assets
 RUN mkdir -p /app/server/static/js /app/server/static/data
 COPY ants/visualizer/js/ /app/server/static/js/
 COPY ants/visualizer/data/ /app/server/static/data/
+COPY server/static/favicon.svg /app/server/static/
 
 # Stage sample bots in a non-volume path (copied at startup if SEED_SAMPLE_BOTS=true)
 RUN mkdir -p /app/sample_bots /app/server/bots /app/server/replays /app/server/data && \
