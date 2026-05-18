@@ -93,7 +93,7 @@ def run_single_game(bot_ids, bot_names, bot_versions, bot_languages):
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=300,
-            cwd=str(ANTS_DIR), preexec_fn=_set_limits
+            cwd=str(ANTS_DIR)
         )
     except subprocess.TimeoutExpired:
         return None
