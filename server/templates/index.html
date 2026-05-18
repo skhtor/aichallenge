@@ -46,6 +46,8 @@
             <form id="register-form">
                 <label>Team Name</label>
                 <input type="text" id="reg-name" required placeholder="e.g. TeamAlpha">
+                <label>Invite Code</label>
+                <input type="text" id="reg-invite" required placeholder="Enter your invite code">
                 <button type="submit">Register</button>
             </form>
             <div id="reg-result" style="margin-top:0.5rem;"></div>
@@ -152,8 +154,10 @@
     document.getElementById('register-form').onsubmit = async (e) => {
         e.preventDefault();
         const name = document.getElementById('reg-name').value;
+        const invite = document.getElementById('reg-invite').value;
         const form = new FormData();
         form.append('name', name);
+        form.append('invite_code', invite);
         const res = await fetch('/api/register', { method: 'POST', body: form });
         const data = await res.json();
         const el = document.getElementById('reg-result');
