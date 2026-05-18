@@ -27,7 +27,7 @@ COPY ants/ /app/ants/
 COPY worker/ /app/worker/
 
 # Copy server
-COPY server/app.py server/worker.py server/db.py server/languages.py /app/server/
+COPY server/app.py server/worker.py server/db.py server/languages.py server/glicko2.py /app/server/
 COPY server/templates/ /app/server/templates/
 
 # Copy visualizer assets into static dir
