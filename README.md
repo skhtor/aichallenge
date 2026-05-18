@@ -1,27 +1,46 @@
-AI Challenge Source Code Repository
-===================================
+# AI Ants Challenge
 
-*Codename: Epsilon*
+A competitive AI programming challenge where bots play the [Ants](http://aichallenge.org/) game. Teams upload bots, the server runs matches automatically, and a live leaderboard tracks ELO ratings.
 
-This code provides the basis for the Fall 2011 [AI Challenge](http://aichallenge.org/).
-Epsilon is supposed to implement the ants game.
+## Quick Start
 
-Folder Contents
----------------
+```bash
+docker-compose up --build
+```
 
-* `ants/` - Everything related to ants: engine, starter packages, maps/mapgen, visualizer
-* `integration_testing` - Anything related to testing/stress-testing the contest setup
-* `manager/` - Tournament manager which coordinates the workers and computes skill ratings
-* `worker/` - Standalone workers which run games (including compiler and sandbox)
-* `sql/` - Files for creating an empty sql database
-* `website/` - Main website and frontend
+Server available at **http://localhost:5001**
 
-Initializing the git submodules:
+See [SERVER_INSTRUCTIONS.md](SERVER_INSTRUCTIONS.md) for full usage details (uploading bots, API, supported languages).
 
-* `git submodule init`
-* `git submodule update`
+## Project Structure
 
-Installation
----------------
+| Directory | Description |
+|-----------|-------------|
+| `server/` | FastAPI web server, match worker, database layer |
+| `ants/` | Game engine, starter packages, maps, visualizer |
+| `sql/` | Legacy SQL schema files |
+| `manager/` | Legacy tournament manager |
+| `worker/` | Legacy standalone workers |
+| `website/` | Legacy PHP frontend |
+| `setup/` | Legacy server provisioning scripts |
 
-Follow [INSTALL.md](https://github.com/aichallenge/aichallenge/blob/epsilon/INSTALL.md).
+## Development
+
+The Makefile wraps common docker-compose commands:
+
+```bash
+make up        # Start services (detached)
+make build     # Rebuild and start
+make logs      # Tail logs
+make restart   # Restart web + worker
+make down      # Stop everything
+make db-shell  # psql into the database
+```
+
+## Installation
+
+See [INSTALL.md](INSTALL.md) for Docker and local setup instructions.
+
+## CI/CD
+
+Pushing to the `epsilon` branch builds and publishes a Docker image to `ghcr.io` via GitHub Actions.

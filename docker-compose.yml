@@ -1,27 +1,61 @@
 services:
+  db:
+    image: postgres:16-alpine
+    command: postgres -c max_connections=200
+    environment:
+      POSTGRES_DB: ants
+      POSTGRES_USER: ants
+      POSTGRES_PASSWORD: ants
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ants"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+
   web:
     build: .
-    command: uvicorn app:app --host 0.0.0.0 --port 5000
+    user: root
+    command: uvicorn app:app --host 0.0.0.0 --port 5001 --workers 4
     ports:
-      - "5000:5000"
+      - "5001:5001"
+    environment:
+      DATABASE_URL: postgresql://ants:ants@db:5432/ants
+      SEED_SAMPLE_BOTS: "true"
     volumes:
+      - ./server:/app/server
+      - ./ants:/app/ants
       - bots_data:/app/server/bots
       - replays_data:/app/server/replays
-      - db_data:/app/server/data
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
 
   worker:
     build: .
+    user: root
     command: python -u worker.py
+    environment:
+      DATABASE_URL: postgresql://ants:ants@db:5432/ants
     volumes:
+      - ./server:/app/server
+      - ./ants:/app/ants
       - bots_data:/app/server/bots
       - replays_data:/app/server/replays
-      - db_data:/app/server/data
     restart: unless-stopped
     depends_on:
-      - web
+      db:
+        condition: service_healthy
+      web:
+        condition: service_started
+    deploy:
+      replicas: 1
 
 volumes:
   bots_data:
   replays_data:
-  db_data:
+  pg_data:

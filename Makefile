@@ -1,22 +1,22 @@
 .PHONY: up down build logs restart ps db-shell
 
 up:
-	docker-compose -f docker-compose.dev.yml up -d
+	docker-compose up -d
 
 down:
-	docker-compose -f docker-compose.dev.yml down
+	docker-compose down
 
 build:
-	docker-compose -f docker-compose.dev.yml up --build -d
+	docker-compose up --build -d
 
 logs:
-	docker-compose -f docker-compose.dev.yml logs -f
+	docker-compose logs -f
 
 restart:
-	docker-compose -f docker-compose.dev.yml restart web worker
+	docker-compose restart web worker
 
 ps:
-	docker-compose -f docker-compose.dev.yml ps
+	docker-compose ps
 
 db-shell:
-	docker-compose -f docker-compose.dev.yml exec db psql -U ants -d ants
+	docker-compose exec db psql -U ants -d ants
