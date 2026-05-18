@@ -24,6 +24,7 @@ services:
       - "5000:5000"
     environment:
       DATABASE_URL: postgresql://ants:ants@db:5432/ants
+      SEED_SAMPLE_BOTS: "true"
     volumes:
       - ./server:/app/server
       - ./ants:/app/ants

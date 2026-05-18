@@ -107,11 +107,23 @@ def health():
 @app.on_event("startup")
 def startup():
     init_db()
-    _seed_sample_bots()
+    if os.environ.get("SEED_SAMPLE_BOTS", "").lower() in ("1", "true", "yes"):
+        _seed_sample_bots()
 
 
 def _seed_sample_bots():
-    """Register sample bots if they exist on disk but not in DB."""
+    """Copy sample bots from the image into the bots volume and register them in the DB."""
+    sample_src = Path("/app/sample_bots")
+    if not sample_src.exists():
+        return
+
+    # Copy bot files into volume if not already present
+    for bot_dir in sample_src.iterdir():
+        if bot_dir.is_dir():
+            dest = BOTS_DIR / bot_dir.name
+            if not dest.exists():
+                shutil.copytree(bot_dir, dest)
+
     with db_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("SELECT id FROM teams WHERE name = 'Sample'")

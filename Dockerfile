@@ -35,16 +35,15 @@ RUN mkdir -p /app/server/static/js /app/server/static/data
 COPY ants/visualizer/js/ /app/server/static/js/
 COPY ants/visualizer/data/ /app/server/static/data/
 
-# Seed sample bots
-RUN mkdir -p /app/server/bots /app/server/replays /app/server/data && \
+# Stage sample bots in a non-volume path (copied at startup if SEED_SAMPLE_BOTS=true)
+RUN mkdir -p /app/sample_bots /app/server/bots /app/server/replays /app/server/data && \
     for bot in HunterBot LeftyBot GreedyBot RandomBot; do \
-        mkdir -p /app/server/bots/$bot && \
-        cp /app/ants/dist/sample_bots/python/$bot.py /app/server/bots/$bot/MyBot.py && \
-        cp /app/ants/dist/sample_bots/python/ants.py /app/server/bots/$bot/ants.py; \
+        mkdir -p /app/sample_bots/$bot && \
+        cp /app/ants/dist/sample_bots/python/$bot.py /app/sample_bots/$bot/MyBot.py && \
+        cp /app/ants/dist/sample_bots/python/ants.py /app/sample_bots/$bot/ants.py; \
     done && \
-    cp /app/ants/dist/sample_bots/python/logutils.py /app/server/bots/GreedyBot/logutils.py
+    cp /app/ants/dist/sample_bots/python/logutils.py /app/sample_bots/GreedyBot/logutils.py
 
-VOLUME ["/app/server/bots", "/app/server/replays", "/app/server/data"]
 EXPOSE 5000
 
 RUN useradd -r -s /bin/false appuser && \
