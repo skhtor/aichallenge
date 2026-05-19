@@ -1,34 +1,41 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Replay - Match #{{ match_id }}</title>
     <link rel="icon" type="image/svg+xml" href="/visualizer/favicon.svg">
-    <script type="text/javascript" src="/visualizer/js/visualizer.js"></script>
-    <script type="text/javascript">
+    <script src="/visualizer/js/visualizer.js"></script>
+    <script>
         function init() {
             var options = new Options();
             options.data_dir = '/visualizer/data/';
             options.embedded = true;
             var visualizer = new Visualizer(document.getElementById('viewer'), options);
-            // Fetch replay data and load it
             fetch('/replay_data/{{ match_id }}')
                 .then(r => r.text())
                 .then(data => visualizer.loadReplayData(data))
-                .catch(e => document.getElementById('viewer').innerHTML = '<p style="color:red;">Failed to load replay</p>');
+                .catch(() => document.getElementById('viewer').innerHTML = '<p style="color:#e57373;text-align:center;padding:2rem;">Failed to load replay</p>');
         }
     </script>
     <style>
-        html, body { margin: 0; padding: 0; background: #1a1a2e; color: #eee; font-family: -apple-system, sans-serif; }
-        #header { padding: 1rem 2rem; background: #16213e; }
-        #header a { color: #e94560; text-decoration: none; }
-        #viewer { width: 100%; height: calc(100vh - 60px); }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; background: #0d0d0d; color: #ccc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        header { background: #161616; border-bottom: 1px solid #222; padding: 0.8rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        header a { color: #666; text-decoration: none; font-size: 0.85rem; }
+        header a:hover { color: #aaa; }
+        header .match-label { color: #fff; font-size: 0.9rem; font-weight: 600; }
+        header .logo { color: #fff; font-weight: 700; font-size: 1rem; text-decoration: none; }
+        header .logo span { color: #4caf50; }
+        #viewer { width: 100%; height: calc(100vh - 52px); }
     </style>
 </head>
 <body onload="init()">
-    <div id="header">
-        <a href="javascript:history.back()">← Back</a> &nbsp; Match #{{ match_id }}
-    </div>
+    <header>
+        <a href="javascript:history.back()">← Back</a>
+        <span class="match-label">Match #{{ match_id }}</span>
+        <a href="/" class="logo">🐜 <span>AI Ants</span></a>
+    </header>
     <div id="viewer"></div>
 </body>
 </html>

@@ -1,143 +1,255 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ bot.name }} - AI Ants Challenge</title>
     <link rel="icon" type="image/svg+xml" href="/visualizer/favicon.svg">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #eee; padding: 2rem; max-width: 900px; margin: 0 auto; }
-        a { color: #4ecdc4; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        h1 { color: #e94560; margin-bottom: 0.3rem; }
-        h2 { color: #e94560; margin: 1.5rem 0 0.5rem; }
-        .meta { color: #aaa; margin-bottom: 1.5rem; }
-        .stats { display: flex; gap: 2rem; margin-bottom: 1.5rem; }
-        .stat { background: #16213e; padding: 1rem 1.5rem; border-radius: 8px; text-align: center; }
-        .stat-val { font-size: 1.5rem; font-weight: bold; color: #4ecdc4; }
-        .stat-label { font-size: 0.8rem; color: #aaa; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
-        th, td { padding: 0.4rem 0.8rem; text-align: left; border-bottom: 1px solid #333; }
-        th { background: #16213e; color: #e94560; }
-        .elo { color: #4ecdc4; font-weight: bold; }
-        .score { color: #ffd93d; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d0d0d; color: #ccc; line-height: 1.5; }
+
+        header { background: #161616; border-bottom: 1px solid #222; padding: 1rem 2rem; position: sticky; top: 0; z-index: 100; }
+        .header-inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+        .logo { font-size: 1.3rem; font-weight: 700; color: #fff; white-space: nowrap; text-decoration: none; }
+        .logo span { color: #4caf50; }
+        .logo:hover { text-decoration: none; }
+
+        main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+
+        .back { color: #666; text-decoration: none; font-size: 0.85rem; display: inline-block; margin-bottom: 1.5rem; }
+        .back:hover { color: #aaa; }
+
+        /* Bot header */
+        .bot-header { margin-bottom: 2rem; }
+        .bot-header h1 { font-size: 1.8rem; color: #fff; margin-bottom: 0.3rem; }
+        .bot-meta { color: #666; font-size: 0.9rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+        .bot-meta .inactive-badge { color: #e57373; font-weight: 500; }
+
+        /* Stats grid */
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem; margin-bottom: 2rem; }
+        .stat { background: #141414; border: 1px solid #1e1e1e; border-radius: 8px; padding: 1rem; text-align: center; }
+        .stat-val { font-size: 1.4rem; font-weight: 700; color: #81c784; font-variant-numeric: tabular-nums; }
+        .stat-label { font-size: 0.75rem; color: #555; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.2rem; }
+
+        /* Sections */
+        section { margin-bottom: 2.5rem; }
+        .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
+        .section-header h2 { font-size: 1rem; color: #fff; font-weight: 600; }
+
+        /* Chart */
+        .chart-container { background: #141414; border: 1px solid #1e1e1e; border-radius: 8px; padding: 1rem; }
+        #elo-chart { width: 100%; height: 180px; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 0.5rem 0.6rem; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #555; border-bottom: 1px solid #222; }
+        td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #1a1a1a; font-size: 0.85rem; }
+        tr:hover { background: #141414; }
+
+        .elo-pos { color: #81c784; }
+        .elo-neg { color: #e57373; }
+
+        /* Management */
+        .mgmt { background: #141414; border: 1px solid #1e1e1e; border-radius: 8px; padding: 1rem; }
+        .mgmt-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+        .mgmt-row input { background: #0d0d0d; border: 1px solid #2a2a2a; color: #eee; padding: 0.45rem 0.8rem; border-radius: 6px; flex: 1; min-width: 180px; font-size: 0.85rem; }
+        .mgmt-row input:focus { outline: none; border-color: #4caf50; }
+        .btn { padding: 0.45rem 1rem; border-radius: 6px; border: none; cursor: pointer; font-size: 0.8rem; font-weight: 500; }
+        .btn-danger { background: transparent; color: #e57373; border: 1px solid #e57373; }
+        .btn-danger:hover { background: #e5737322; }
+        .btn-primary { background: #4caf50; color: #fff; }
+        .btn-primary:hover { background: #43a047; }
+        .btn-ghost { background: transparent; color: #aaa; border: 1px solid #333; }
+        .btn-ghost:hover { background: #1a1a1a; color: #fff; }
+
+        /* H2H */
+        .h2h { background: #141414; border: 1px solid #1e1e1e; border-radius: 8px; padding: 1rem; }
+        .h2h select { background: #0d0d0d; color: #eee; border: 1px solid #2a2a2a; padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.85rem; }
+        .h2h select:focus { outline: none; border-color: #4caf50; }
+        .h2h-bar { background: #222; border-radius: 4px; height: 6px; overflow: hidden; margin-top: 0.8rem; }
+
+        /* Pagination */
+        .pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 0.8rem; }
+        .pagination a { color: #81c784; text-decoration: none; font-size: 0.8rem; padding: 0.3rem 0.7rem; border: 1px solid #222; border-radius: 4px; }
+        .pagination a:hover { background: #1a1a1a; }
+        .pagination span { color: #555; font-size: 0.8rem; }
+
+        /* Responsive */
+        @media (max-width: 700px) {
+            main { padding: 1rem; }
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .mgmt-row { flex-direction: column; }
+            .mgmt-row input { width: 100%; }
+        }
     </style>
 </head>
 <body>
-    <a href="/">← Back</a>
-    <h1>{{ bot.name }}</h1>
-    <div class="meta">Team: {{ bot.team_name }} · Version {{ bot.active_version }}{% if not bot.active %} · <span style="color:#e94560;">INACTIVE</span>{% endif %}</div>
-
-    <div class="card" style="background:#16213e;padding:1rem;border-radius:8px;margin-bottom:1.5rem;">
-        <h3 style="margin-bottom:0.5rem;color:#e94560;">Bot Management</h3>
-        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="mgmt-token" placeholder="Team token" style="background:#0f3460;border:1px solid #333;color:#eee;padding:0.4rem 0.8rem;border-radius:4px;flex:1;min-width:200px;">
-            {% if bot.active %}
-            <button onclick="toggleBot(false)" style="background:#e94560;color:#fff;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;">Deactivate</button>
-            {% else %}
-            <button onclick="toggleBot(true)" style="background:#4ecdc4;color:#000;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;">Reactivate</button>
-            {% endif %}
-            <button onclick="deleteBot()" style="background:#333;color:#e94560;border:1px solid #e94560;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;">Delete</button>
+    <header>
+        <div class="header-inner">
+            <a href="/" class="logo">🐜 <span>AI Ants</span> Challenge</a>
         </div>
-        <div id="mgmt-result" style="margin-top:0.5rem;font-size:0.85rem;"></div>
-    </div>
+    </header>
 
-    <div class="stats">
-        <div class="stat"><div class="stat-val">{{ "%.0f"|format(bot.elo) }}</div><div class="stat-label">ELO</div></div>
-        <div class="stat"><div class="stat-val">{{ bot.games_played }}</div><div class="stat-label">Games</div></div>
-        <div class="stat"><div class="stat-val">{{ bot.wins }}</div><div class="stat-label">Wins</div></div>
-        <div class="stat"><div class="stat-val">{{ "%.0f"|format(bot.wins * 100 / bot.games_played) if bot.games_played > 0 else "0" }}%</div><div class="stat-label">Win Rate</div></div>
-    </div>
+    <main>
+        <a href="/" class="back">← Leaderboard</a>
 
-    <h2>ELO History</h2>
-    <canvas id="elo-chart" width="800" height="200" style="width:100%;max-width:800px;background:#16213e;border-radius:8px;"></canvas>
+        <div class="bot-header">
+            <h1>{{ bot.name }}</h1>
+            <div class="bot-meta">
+                <span>{{ bot.team_name }}</span>
+                <span>v{{ bot.active_version }}</span>
+                <span>{{ bot.language or 'unknown' }}</span>
+                {% if not bot.active %}<span class="inactive-badge">Inactive</span>{% endif %}
+            </div>
+        </div>
 
-    <h2>Versions</h2>
-    <table>
-        <tr><th>Version</th><th>Uploaded</th><th></th></tr>
-        {% for v in versions %}
-        <tr>
-            <td>v{{ v.version }}{% if v.version == bot.active_version %} <span style="color:#4ecdc4;">(active)</span>{% endif %}</td>
-            <td>{{ v.uploaded_at[:16].replace('T', ' ') }}</td>
-            <td>{% if v.version != bot.active_version and loop.index <= 5 %}<button onclick="rollback({{ v.version }})" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.2rem 0.6rem;border-radius:3px;cursor:pointer;font-size:0.8rem;">↩ Rollback</button>{% endif %}</td>
-        </tr>
-        {% endfor %}
-    </table>
+        <div class="stats">
+            <div class="stat"><div class="stat-val">{{ "%.0f"|format(bot.elo) }}</div><div class="stat-label">ELO</div></div>
+            <div class="stat"><div class="stat-val">{{ bot.games_played }}</div><div class="stat-label">Games</div></div>
+            <div class="stat"><div class="stat-val">{{ bot.wins }}</div><div class="stat-label">Wins</div></div>
+            <div class="stat"><div class="stat-val">{{ "%.0f"|format(bot.wins * 100 / bot.games_played) if bot.games_played > 0 else "0" }}%</div><div class="stat-label">Win Rate</div></div>
+        </div>
 
-    {% if versions_total_pages > 1 %}
-    <div style="display:flex;align-items:center;justify-content:center;gap:1rem;margin:0 0 1rem;">
-        {% if versions_page > 1 %}<a href="?versions_page={{ versions_page - 1 }}&matches_page={{ matches_page }}" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.4rem 1rem;border-radius:4px;text-decoration:none;">← Previous</a>{% endif %}
-        <span style="color:#aaa;">Page {{ versions_page }} of {{ versions_total_pages }}</span>
-        {% if versions_page < versions_total_pages %}<a href="?versions_page={{ versions_page + 1 }}&matches_page={{ matches_page }}" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.4rem 1rem;border-radius:4px;text-decoration:none;">Next →</a>{% endif %}
-    </div>
-    {% endif %}
+        <!-- ELO Chart -->
+        <section>
+            <div class="section-header"><h2>ELO History</h2></div>
+            <div class="chart-container">
+                <canvas id="elo-chart" width="1000" height="180"></canvas>
+            </div>
+        </section>
 
-    <h2>Recent Matches <button id="refresh-btn" onclick="location.reload()" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.3rem 0.8rem;border-radius:4px;cursor:pointer;font-size:0.85rem;vertical-align:middle;display:none;">🔄 <span id="new-count">0</span> new</button></h2>
-    <table>
-        <tr><th>Date</th><th>Ver</th><th>Score</th><th>Status</th><th>ELO Δ</th><th>Turns</th><th></th></tr>
-        {% for m in matches %}
-        <tr>
-            <td>{{ m.played_at[:16].replace('T', ' ') }}</td>
-            <td style="color:#666;">v{{ m.bot_version or '?' }}</td>
-            <td class="score">{{ m.score }}</td>
-            <td>{{ m.status }}</td>
-            <td style="color:{{ '#e94560' if m.elo_change < 0 else '#4ecdc4' if m.elo_change > 0 else '#eee' }};">{{ "%+.1f"|format(m.elo_change) }}</td>
-            <td>{{ m.turns }}</td>
-            <td>{% if m.replay_file %}<a href="/replay/{{ m.match_id }}">▶</a>{% endif %}</td>
-        </tr>
-        {% endfor %}
-    </table>
+        <!-- Head-to-Head -->
+        <section>
+            <div class="section-header"><h2>Head-to-Head</h2></div>
+            <div class="h2h">
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <span style="color:#666;font-size:0.85rem;">vs</span>
+                    <select id="h2h-opponent"></select>
+                </div>
+                <div id="h2h-result" style="margin-top:0.8rem;"></div>
+            </div>
+        </section>
 
-    {% if matches_total_pages > 1 %}
-    <div style="display:flex;align-items:center;justify-content:center;gap:1rem;margin:0 0 1rem;">
-        {% if matches_page > 1 %}<a href="?matches_page={{ matches_page - 1 }}&versions_page={{ versions_page }}" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.4rem 1rem;border-radius:4px;text-decoration:none;">← Previous</a>{% endif %}
-        <span style="color:#aaa;">Page {{ matches_page }} of {{ matches_total_pages }}</span>
-        {% if matches_page < matches_total_pages %}<a href="?matches_page={{ matches_page + 1 }}&versions_page={{ versions_page }}" style="background:#0f3460;color:#4ecdc4;border:1px solid #333;padding:0.4rem 1rem;border-radius:4px;text-decoration:none;">Next →</a>{% endif %}
-    </div>
-    {% endif %}
+        <!-- Recent Matches -->
+        <section>
+            <div class="section-header">
+                <h2>Match History</h2>
+                <button id="refresh-btn" onclick="location.reload()" class="btn btn-ghost" style="display:none;">🔄 <span id="new-count">0</span> new</button>
+            </div>
+            <table>
+                <thead><tr><th>Time</th><th>Ver</th><th>Score</th><th>Status</th><th>ELO Δ</th><th>Turns</th><th></th></tr></thead>
+                <tbody>
+                {% for m in matches %}
+                <tr>
+                    <td style="color:#666;">{{ m.played_at[:16].replace('T', ' ') }}</td>
+                    <td style="color:#555;">v{{ m.bot_version or '?' }}</td>
+                    <td style="color:#fff;font-weight:500;">{{ m.score }}</td>
+                    <td style="color:{{ '#81c784' if m.status == 'survived' else '#e57373' }};">{{ m.status }}</td>
+                    <td class="{{ 'elo-pos' if m.elo_change > 0 else 'elo-neg' if m.elo_change < 0 else '' }}">{{ "%+.1f"|format(m.elo_change) }}</td>
+                    <td style="color:#555;">{{ m.turns }}</td>
+                    <td>{% if m.replay_file %}<a href="/replay/{{ m.match_id }}" style="color:#81c784;">▶</a>{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% if matches_total_pages > 1 %}
+            <div class="pagination">
+                {% if matches_page > 1 %}<a href="?matches_page={{ matches_page - 1 }}&versions_page={{ versions_page }}">← Prev</a>{% endif %}
+                <span>{{ matches_page }} / {{ matches_total_pages }}</span>
+                {% if matches_page < matches_total_pages %}<a href="?matches_page={{ matches_page + 1 }}&versions_page={{ versions_page }}">Next →</a>{% endif %}
+            </div>
+            {% endif %}
+        </section>
 
-    <h2>Head-to-Head</h2>
-    <div id="h2h" style="background:#16213e;padding:1rem;border-radius:8px;">
-        <label style="color:#aaa;font-size:0.9rem;">Compare against:</label>
-        <select id="h2h-opponent" style="background:#0f3460;color:#eee;border:1px solid #333;padding:0.3rem;border-radius:4px;margin-left:0.5rem;"></select>
-        <div id="h2h-result" style="margin-top:0.8rem;"></div>
-    </div>
+        <!-- Versions -->
+        <section>
+            <div class="section-header"><h2>Versions</h2></div>
+            <table>
+                <thead><tr><th>Version</th><th>Uploaded</th><th></th></tr></thead>
+                <tbody>
+                {% for v in versions %}
+                <tr>
+                    <td>v{{ v.version }}{% if v.version == bot.active_version %} <span style="color:#81c784;font-size:0.75rem;">active</span>{% endif %}</td>
+                    <td style="color:#666;">{{ v.uploaded_at[:16].replace('T', ' ') }}</td>
+                    <td>{% if v.version != bot.active_version and loop.index <= 5 %}<button onclick="rollback({{ v.version }})" class="btn btn-ghost" style="font-size:0.75rem;padding:0.2rem 0.6rem;">↩ Rollback</button>{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% if versions_total_pages > 1 %}
+            <div class="pagination">
+                {% if versions_page > 1 %}<a href="?versions_page={{ versions_page - 1 }}&matches_page={{ matches_page }}">← Prev</a>{% endif %}
+                <span>{{ versions_page }} / {{ versions_total_pages }}</span>
+                {% if versions_page < versions_total_pages %}<a href="?versions_page={{ versions_page + 1 }}&matches_page={{ matches_page }}">Next →</a>{% endif %}
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- Bot Management -->
+        <section>
+            <div class="section-header"><h2>Manage</h2></div>
+            <div class="mgmt">
+                <div class="mgmt-row">
+                    <input type="text" id="mgmt-token" placeholder="Team token">
+                    {% if bot.active %}
+                    <button onclick="toggleBot(false)" class="btn btn-ghost">Deactivate</button>
+                    {% else %}
+                    <button onclick="toggleBot(true)" class="btn btn-primary">Reactivate</button>
+                    {% endif %}
+                    <button onclick="deleteBot()" class="btn btn-danger">Delete</button>
+                </div>
+                <div id="mgmt-result" style="margin-top:0.5rem;font-size:0.85rem;"></div>
+            </div>
+        </section>
+    </main>
+
     <script>
     const botName = '{{ bot.name }}';
 
     // ELO chart
-    fetch('/api/elo_history/' + botName)
-        .then(r => r.json())
-        .then(data => {
-            if (!data.length) return;
-            const canvas = document.getElementById('elo-chart');
-            const ctx = canvas.getContext('2d');
-            const w = canvas.width, h = canvas.height;
-            const pad = 40;
-            const elos = data.map(d => d.elo);
-            const min = Math.min(...elos) - 10, max = Math.max(...elos) + 10;
-            const xStep = (w - pad * 2) / Math.max(elos.length - 1, 1);
+    fetch('/api/elo_history/' + botName).then(r => r.json()).then(data => {
+        if (!data.length) return;
+        const canvas = document.getElementById('elo-chart');
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+        const w = rect.width, h = rect.height;
+        const pad = { top: 20, right: 20, bottom: 20, left: 45 };
 
-            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-            for (let i = 0; i <= 4; i++) {
-                const y = pad + (h - pad * 2) * i / 4;
-                ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
-                ctx.fillStyle = '#666'; ctx.font = '11px sans-serif';
-                ctx.fillText(Math.round(max - (max - min) * i / 4), 2, y + 4);
-            }
-            ctx.strokeStyle = '#4ecdc4'; ctx.lineWidth = 2;
-            ctx.beginPath();
-            elos.forEach((elo, i) => {
-                const x = pad + i * xStep;
-                const y = pad + (1 - (elo - min) / (max - min)) * (h - pad * 2);
-                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-            });
-            ctx.stroke();
-            if (min < 1200 && max > 1200) {
-                const y = pad + (1 - (1200 - min) / (max - min)) * (h - pad * 2);
-                ctx.strokeStyle = '#e9456044'; ctx.setLineDash([4,4]);
-                ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
-            }
+        const elos = data.map(d => d.elo);
+        const min = Math.min(...elos) - 20, max = Math.max(...elos) + 20;
+        const xStep = (w - pad.left - pad.right) / Math.max(elos.length - 1, 1);
+
+        // Grid
+        ctx.strokeStyle = '#222'; ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+            const y = pad.top + (h - pad.top - pad.bottom) * i / 4;
+            ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
+            ctx.fillStyle = '#555'; ctx.font = '11px -apple-system, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(Math.round(max - (max - min) * i / 4), pad.left - 8, y + 4);
+        }
+
+        // Line
+        ctx.strokeStyle = '#4caf50'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+        ctx.beginPath();
+        elos.forEach((elo, i) => {
+            const x = pad.left + i * xStep;
+            const y = pad.top + (1 - (elo - min) / (max - min)) * (h - pad.top - pad.bottom);
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         });
+        ctx.stroke();
+
+        // Fill under line
+        const lastX = pad.left + (elos.length - 1) * xStep;
+        const bottom = h - pad.bottom;
+        ctx.lineTo(lastX, bottom); ctx.lineTo(pad.left, bottom); ctx.closePath();
+        ctx.fillStyle = '#4caf5015'; ctx.fill();
+    });
 
     // Head-to-head
     fetch('/api/leaderboard').then(r => r.json()).then(bots => {
@@ -151,56 +263,61 @@
         if (sel.options.length) loadH2H(sel.value);
     });
 
-    async function rollback(version) {
-        const token = document.getElementById('mgmt-token').value;
-        if (!token) { document.getElementById('mgmt-result').innerHTML = '<span style="color:#e94560;">Enter your team token</span>'; return; }
-        const res = await fetch(`/api/bot/${botName}/rollback/${version}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
-        const data = await res.json();
-        document.getElementById('mgmt-result').innerHTML = res.ok
-            ? `<span style="color:#4ecdc4;">✓ Rolled back to v${version}</span>` : `<span style="color:#e94560;">✗ ${data.detail}</span>`;
-        if (res.ok) setTimeout(() => location.reload(), 1000);
-    }
-    async function toggleBot(activate) {
-        const token = document.getElementById('mgmt-token').value;
-        if (!token) { document.getElementById('mgmt-result').innerHTML = '<span style="color:#e94560;">Enter your team token</span>'; return; }
-        const action = activate ? 'activate' : 'deactivate';
-        const res = await fetch(`/api/bot/${botName}/${action}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
-        const data = await res.json();
-        document.getElementById('mgmt-result').innerHTML = res.ok
-            ? `<span style="color:#4ecdc4;">✓ Bot ${action}d</span>` : `<span style="color:#e94560;">✗ ${data.detail}</span>`;
-        if (res.ok) setTimeout(() => location.reload(), 1000);
-    }
-    async function deleteBot() {
-        const token = document.getElementById('mgmt-token').value;
-        if (!token) { document.getElementById('mgmt-result').innerHTML = '<span style="color:#e94560;">Enter your team token</span>'; return; }
-        if (!confirm('Delete this bot permanently? This cannot be undone.')) return;
-        const res = await fetch(`/api/bot/${botName}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
-        const data = await res.json();
-        document.getElementById('mgmt-result').innerHTML = res.ok
-            ? `<span style="color:#4ecdc4;">✓ Bot deleted</span>` : `<span style="color:#e94560;">✗ ${data.detail}</span>`;
-        if (res.ok) setTimeout(() => location.href = '/', 1000);
-    }
-
     function loadH2H(opponent) {
         fetch(`/api/head_to_head/${botName}/${opponent}`).then(r => r.json()).then(d => {
             const el = document.getElementById('h2h-result');
-            if (!d.matches) { el.innerHTML = '<span style="color:#666;">No matches yet</span>'; return; }
-            const pctA = Math.round(d.wins_a * 100 / d.matches);
-            const pctB = Math.round(d.wins_b * 100 / d.matches);
+            if (!d.matches) { el.innerHTML = '<span style="color:#555;">No matches yet</span>'; return; }
+            const pctA = d.matches > 0 ? Math.round(d.wins_a * 100 / d.matches) : 0;
+            const pctB = d.matches > 0 ? Math.round(d.wins_b * 100 / d.matches) : 0;
             el.innerHTML = `
-                <div style="display:flex;gap:2rem;align-items:center;">
-                    <div><span class="elo" style="font-size:1.3rem;">${d.wins_a}</span> wins</div>
-                    <div style="color:#666;">${d.draws} draws</div>
-                    <div><span style="color:#e94560;font-size:1.3rem;font-weight:bold;">${d.wins_b}</span> wins</div>
+                <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.4rem;">
+                    <span style="color:#81c784;font-weight:600;">${d.wins_a} wins</span>
+                    <span style="color:#555;">${d.draws} draws</span>
+                    <span style="color:#e57373;font-weight:600;">${d.wins_b} wins</span>
                 </div>
-                <div style="margin-top:0.5rem;background:#0f3460;border-radius:4px;height:8px;overflow:hidden;">
-                    <div style="height:100%;width:${pctA}%;background:#4ecdc4;float:left;"></div>
-                    <div style="height:100%;width:${pctB}%;background:#e94560;float:right;"></div>
+                <div class="h2h-bar">
+                    <div style="height:100%;width:${pctA}%;background:#81c784;float:left;border-radius:4px 0 0 4px;"></div>
+                    <div style="height:100%;width:${pctB}%;background:#e57373;float:right;border-radius:0 4px 4px 0;"></div>
                 </div>
-                <div style="color:#666;font-size:0.8rem;margin-top:0.3rem;">${d.matches} matches played</div>`;
+                <div style="color:#555;font-size:0.75rem;margin-top:0.4rem;text-align:center;">${d.matches} matches</div>`;
         });
     }
-    // Poll for new matches involving this bot
+
+    // Management actions
+    async function rollback(version) {
+        const token = document.getElementById('mgmt-token').value;
+        if (!token) { showMgmt('Enter your team token', true); return; }
+        const res = await fetch(`/api/bot/${botName}/rollback/${version}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        showMgmt(res.ok ? `Rolled back to v${version}` : data.detail, !res.ok);
+        if (res.ok) setTimeout(() => location.reload(), 1000);
+    }
+
+    async function toggleBot(activate) {
+        const token = document.getElementById('mgmt-token').value;
+        if (!token) { showMgmt('Enter your team token', true); return; }
+        const action = activate ? 'activate' : 'deactivate';
+        const res = await fetch(`/api/bot/${botName}/${action}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        showMgmt(res.ok ? `Bot ${action}d` : data.detail, !res.ok);
+        if (res.ok) setTimeout(() => location.reload(), 1000);
+    }
+
+    async function deleteBot() {
+        const token = document.getElementById('mgmt-token').value;
+        if (!token) { showMgmt('Enter your team token', true); return; }
+        if (!confirm('Delete this bot permanently? This cannot be undone.')) return;
+        const res = await fetch(`/api/bot/${botName}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        showMgmt(res.ok ? 'Bot deleted' : data.detail, !res.ok);
+        if (res.ok) setTimeout(() => location.href = '/', 1000);
+    }
+
+    function showMgmt(msg, isError) {
+        document.getElementById('mgmt-result').innerHTML = `<span style="color:${isError ? '#e57373' : '#81c784'};">${isError ? '✗' : '✓'} ${msg}</span>`;
+    }
+
+    // Poll for new matches
     let newMatchCount = 0;
     setInterval(async () => {
         try {
@@ -210,7 +327,7 @@
             if (bot && bot.games_played > {{ bot.games_played }}) {
                 newMatchCount = bot.games_played - {{ bot.games_played }};
                 document.getElementById('new-count').textContent = newMatchCount;
-                document.getElementById('refresh-btn').style.display = 'inline-block';
+                document.getElementById('refresh-btn').style.display = '';
             }
         } catch(e) {}
     }, 10000);
