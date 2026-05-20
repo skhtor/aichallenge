@@ -65,6 +65,17 @@
         .elo-pos { color: #81c784; }
         .elo-neg { color: #e57373; }
 
+        /* Match expansion */
+        .match-details { display: none; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid #222; font-size: 0.8rem; }
+        .match.expanded .match-details { display: block; }
+        .match.expanded { border-color: #333; }
+        .match-detail-row { display: flex; justify-content: space-between; color: #666; margin-bottom: 0.5rem; }
+        .match-detail-row strong { color: #aaa; }
+        .score-bar { display: flex; height: 4px; border-radius: 2px; overflow: hidden; gap: 1px; margin-bottom: 0.5rem; }
+        .score-bar div { height: 100%; border-radius: 2px; }
+        .match-detail-players { display: flex; gap: 1rem; flex-wrap: wrap; color: #555; }
+        .match-detail-players a { color: #81c784; }
+
         /* Pagination */
         .pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; }
         .pagination a { color: #81c784; text-decoration: none; font-size: 0.85rem; padding: 0.4rem 0.8rem; border: 1px solid #222; border-radius: 4px; }
@@ -159,22 +170,41 @@
             </div>
             <div id="matches">
             {% for m in matches %}
-            <div class="match">
+            <div class="match" onclick="this.classList.toggle('expanded')" style="cursor:pointer;">
                 <div class="match-header">
                     <span class="match-id">#{{ m.match.id }} · {{ m.match.turns }} turns</span>
                     <span>
-                        {% if m.match.replay_file %}<a href="/replay/{{ m.match.id }}" class="match-replay">▶ Replay</a> · {% endif %}
+                        {% if m.match.replay_file %}<a href="/replay/{{ m.match.id }}" class="match-replay" onclick="event.stopPropagation()">▶ Replay</a> · {% endif %}
                         <span class="match-time rel-time" data-time="{{ m.match.played_at }}">{{ m.match.played_at[:16] }}</span>
                     </span>
                 </div>
                 <div class="match-players">
                     {% set max_score = m.players|map(attribute='score')|max %}
                     {% for p in m.players %}
-                    <span class="name {% if p.score == max_score %}winner{% endif %}"><a href="/bot/{{ p.bot_name }}">{{ p.bot_name }}</a>{% if p.score == max_score %} 👑{% endif %}</span>
+                    <span class="name {% if p.score == max_score %}winner{% endif %}"><a href="/bot/{{ p.bot_name }}" onclick="event.stopPropagation()">{{ p.bot_name }}</a>{% if p.score == max_score %} 👑{% endif %}</span>
                     <span class="pts">{{ p.score }}</span>
                     <span class="status" style="color:{{ '#81c784' if p.status == 'survived' else '#e57373' }};font-size:0.8rem;">{{ p.status }}</span>
                     <span class="elo-delta {% if p.elo_change > 0 %}elo-pos{% elif p.elo_change < 0 %}elo-neg{% endif %}">{{ "%+.1f"|format(p.elo_change) }}</span>
                     {% endfor %}
+                </div>
+                <div class="match-details">
+                    <div class="match-detail-row">
+                        <span>Map: <strong>{{ m.match.map_file }}</strong></span>
+                        <span>Played: {{ m.match.played_at[:19].replace('T', ' ') }}</span>
+                    </div>
+                    {% set total_score = m.players|map(attribute='score')|sum %}
+                    {% if total_score > 0 %}
+                    <div class="score-bar">
+                        {% for p in m.players %}
+                        <div style="width:{{ (p.score * 100 / total_score)|round }}%;background:{{ '#81c784' if p.score == max_score else '#444' }};" title="{{ p.bot_name }}: {{ p.score }}"></div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <div class="match-detail-players">
+                        {% for p in m.players %}
+                        <span><a href="/bot/{{ p.bot_name }}" onclick="event.stopPropagation()">{{ p.bot_name }}</a> v{{ p.bot_version or '?' }}</span>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
             {% endfor %}
