@@ -18,6 +18,7 @@
                 .then(data => visualizer.loadReplayData(data))
                 .catch(() => document.getElementById('viewer').innerHTML = '<p style="color:#e57373;text-align:center;padding:2rem;">Failed to load replay</p>');
         }
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('/visualizer/sw.js');
     </script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }

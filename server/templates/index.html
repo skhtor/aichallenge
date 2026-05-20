@@ -451,6 +451,7 @@
             history.replaceState(null, '', url);
         }).catch(() => location.href = url).finally(() => section.classList.remove('skeleton'));
     });
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/visualizer/sw.js');
     </script>
 </body>
 </html>
