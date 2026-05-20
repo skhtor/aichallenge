@@ -132,7 +132,7 @@
         </section>
 
         <!-- Recent Matches -->
-        <section>
+        <section id="matches">
             <div class="section-header">
                 <h2>Match History</h2>
                 <button id="refresh-btn" onclick="location.reload()" class="btn btn-ghost" style="display:none;">🔄 <span id="new-count">0</span> new</button>
@@ -154,16 +154,16 @@
                 </tbody>
             </table>
             {% if matches_total_pages > 1 %}
-            <div class="pagination">
-                {% if matches_page > 1 %}<a href="?matches_page={{ matches_page - 1 }}&versions_page={{ versions_page }}">← Prev</a>{% endif %}
+            <div class="pagination" id="matches-pagination">
+                {% if matches_page > 1 %}<a href="?matches_page={{ matches_page - 1 }}&versions_page={{ versions_page }}" data-page="{{ matches_page - 1 }}">← Prev</a>{% endif %}
                 <span>{{ matches_page }} / {{ matches_total_pages }}</span>
-                {% if matches_page < matches_total_pages %}<a href="?matches_page={{ matches_page + 1 }}&versions_page={{ versions_page }}">Next →</a>{% endif %}
+                {% if matches_page < matches_total_pages %}<a href="?matches_page={{ matches_page + 1 }}&versions_page={{ versions_page }}" data-page="{{ matches_page + 1 }}">Next →</a>{% endif %}
             </div>
             {% endif %}
         </section>
 
         <!-- Versions -->
-        <section>
+        <section id="versions">
             <div class="section-header"><h2>Versions</h2></div>
             <table>
                 <thead><tr><th>Version</th><th>Uploaded</th><th></th></tr></thead>
@@ -178,10 +178,10 @@
                 </tbody>
             </table>
             {% if versions_total_pages > 1 %}
-            <div class="pagination">
-                {% if versions_page > 1 %}<a href="?versions_page={{ versions_page - 1 }}&matches_page={{ matches_page }}">← Prev</a>{% endif %}
+            <div class="pagination" id="versions-pagination">
+                {% if versions_page > 1 %}<a href="?versions_page={{ versions_page - 1 }}&matches_page={{ matches_page }}" data-section="versions">← Prev</a>{% endif %}
                 <span>{{ versions_page }} / {{ versions_total_pages }}</span>
-                {% if versions_page < versions_total_pages %}<a href="?versions_page={{ versions_page + 1 }}&matches_page={{ matches_page }}">Next →</a>{% endif %}
+                {% if versions_page < versions_total_pages %}<a href="?versions_page={{ versions_page + 1 }}&matches_page={{ matches_page }}" data-section="versions">Next →</a>{% endif %}
             </div>
             {% endif %}
         </section>
@@ -331,6 +331,27 @@
             }
         } catch(e) {}
     }, 10000);
+
+    // In-place pagination (no scroll jump)
+    document.addEventListener('click', async (e) => {
+        const link = e.target.closest('.pagination a');
+        if (!link) return;
+        e.preventDefault();
+        const url = link.href;
+        try {
+            const res = await fetch(url);
+            const html = await res.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            // Swap the section that contains this pagination
+            const section = link.closest('section');
+            const sectionId = section.id;
+            const newSection = doc.getElementById(sectionId);
+            if (newSection) section.innerHTML = newSection.innerHTML;
+            history.replaceState(null, '', url);
+        } catch(err) {
+            location.href = url;
+        }
+    });
     </script>
 </body>
 </html>
