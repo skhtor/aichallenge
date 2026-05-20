@@ -83,6 +83,14 @@
         .form-group input:focus { outline: none; border-color: #4caf50; }
         .form-hint { font-size: 0.8rem; color: #555; margin-top: 0.5rem; }
 
+        /* Toast */
+        .toast-container { position: fixed; top: 1rem; right: 1rem; z-index: 9999; display: flex; flex-direction: column; gap: 0.5rem; }
+        .toast { padding: 0.8rem 1.2rem; border-radius: 8px; font-size: 0.85rem; color: #fff; animation: toast-in 0.3s ease; max-width: 360px; display: flex; align-items: center; gap: 0.5rem; }
+        .toast-success { background: #2e7d32; }
+        .toast-error { background: #c62828; }
+        .toast a { color: #fff; text-decoration: underline; }
+        @keyframes toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
         /* Info modal table */
         .info-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 1rem 0; }
         .info-table th { text-align: left; padding: 0.4rem 0.6rem; color: #888; font-weight: 500; border-bottom: 1px solid #222; }
@@ -112,6 +120,7 @@
         </div>
     </header>
 
+    <div class="toast-container" id="toasts"></div>
     <main>
         <!-- Leaderboard -->
         <section>
@@ -260,18 +269,45 @@
     }
     document.querySelectorAll('.rel-time').forEach(el => el.textContent = relTime(el.dataset.time));
 
+    // Toast helper
+    function toast(msg, type = 'success') {
+        const el = document.createElement('div');
+        el.className = `toast toast-${type}`;
+        el.innerHTML = msg;
+        document.getElementById('toasts').appendChild(el);
+        setTimeout(() => el.remove(), 5000);
+    }
+
     // Token persistence
     const tokenInput = document.querySelector('input[name="team_token"]');
     const saved = localStorage.getItem('ants_token');
     if (saved && tokenInput) tokenInput.value = saved;
 
-    // Upload spinner
+    // Upload via AJAX
     const uploadForm = document.querySelector('form[action="/upload"]');
-    if (uploadForm) uploadForm.onsubmit = () => {
+    if (uploadForm) uploadForm.onsubmit = async (e) => {
+        e.preventDefault();
         const btn = uploadForm.querySelector('button[type="submit"]');
         btn.disabled = true;
         btn.textContent = '⏳ Uploading...';
         if (tokenInput) localStorage.setItem('ants_token', tokenInput.value);
+        const formData = new FormData(uploadForm);
+        try {
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (res.ok) {
+                toast(`✓ Bot uploaded! <a href="/bot/${data.bot_name}">View ${data.bot_name} →</a>`);
+                document.getElementById('upload-modal').style.display = 'none';
+                uploadForm.reset();
+                if (saved) tokenInput.value = saved;
+            } else {
+                toast(`✗ ${data.error}`, 'error');
+            }
+        } catch(err) {
+            toast('✗ Upload failed', 'error');
+        }
+        btn.disabled = false;
+        btn.textContent = 'Upload';
     };
 
     // Registration
@@ -288,9 +324,10 @@
         if (res.ok) {
             localStorage.setItem('ants_token', data.token);
             if (tokenInput) tokenInput.value = data.token;
-            el.innerHTML = `<p style="color:#81c784;margin-bottom:0.5rem;">✓ Registered!</p><p style="font-size:0.85rem;">Your token: <code style="background:#111;padding:0.2rem 0.5rem;border-radius:3px;color:#81c784;user-select:all;">${data.token}</code></p><p style="color:#e57373;font-size:0.8rem;margin-top:0.5rem;">Save this — it cannot be recovered.</p>`;
+            el.innerHTML = `<p style="font-size:0.85rem;margin-top:0.5rem;">Your token: <code style="background:#111;padding:0.2rem 0.5rem;border-radius:3px;color:#81c784;user-select:all;">${data.token}</code></p><p style="color:#e57373;font-size:0.8rem;margin-top:0.5rem;">Save this — it cannot be recovered.</p>`;
+            toast('✓ Team registered!');
         } else {
-            el.innerHTML = `<p style="color:#e57373;">✗ ${data.detail}</p>`;
+            toast(`✗ ${data.detail}`, 'error');
         }
     };
 

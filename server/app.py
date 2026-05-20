@@ -737,27 +737,27 @@ async def web_upload(
     import random
 
     if _upload_limiter.is_limited(team_token):
-        return HTMLResponse("<h2 style='color:red;'>Upload too frequent. Wait 30 seconds.</h2><a href='/'>Back</a>", status_code=429)
+        return JSONResponse({"error": "Upload too frequent. Wait 30 seconds."}, status_code=429)
 
     team = _verify_token(team_token)
     if not team:
-        return HTMLResponse("<h2 style='color:red;'>Invalid token</h2><a href='/'>Back</a>", status_code=401)
+        return JSONResponse({"error": "Invalid token"}, status_code=401)
 
     safe_name = "".join(c for c in bot_name if c.isalnum() or c in "-_")[:MAX_BOT_NAME_LENGTH]
     if not safe_name:
-        return HTMLResponse("<h2 style='color:red;'>Invalid bot name</h2><a href='/'>Back</a>", status_code=400)
+        return JSONResponse({"error": "Invalid bot name"}, status_code=400)
 
     with db_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("SELECT id, team_id, active_version FROM bots WHERE name = %s", (safe_name,))
         existing = cur.fetchone()
         if existing and existing["team_id"] != team["id"]:
-            return HTMLResponse("<h2 style='color:red;'>Bot belongs to another team</h2><a href='/'>Back</a>", status_code=403)
+            return JSONResponse({"error": "Bot belongs to another team"}, status_code=403)
         if not existing:
             cur.execute("SELECT COUNT(*) as cnt FROM bots WHERE team_id = %s", (team["id"],))
             bot_count = cur.fetchone()["cnt"]
             if bot_count >= MAX_BOTS_PER_TEAM:
-                return HTMLResponse(f"<h2 style='color:red;'>Maximum {MAX_BOTS_PER_TEAM} bots per team</h2><a href='/'>Back</a>", status_code=400)
+                return JSONResponse({"error": f"Maximum {MAX_BOTS_PER_TEAM} bots per team"}, status_code=400)
 
         tmp_dir = Path(tempfile.mkdtemp())
         test_dir = tmp_dir / safe_name
@@ -766,16 +766,16 @@ async def web_upload(
         content = await file.read()
         if len(content) > MAX_UPLOAD_SIZE:
             shutil.rmtree(tmp_dir)
-            return HTMLResponse(f"<h2 style='color:red;'>File too large (max {MAX_UPLOAD_SIZE // 1024 // 1024}MB)</h2><a href='/'>Back</a>", status_code=413)
+            return JSONResponse({"error": f"File too large (max {MAX_UPLOAD_SIZE // 1024 // 1024}MB)"}, status_code=413)
         err = _extract_upload(test_dir, content, file.filename or "MyBot.py")
         if err:
             shutil.rmtree(tmp_dir)
-            return HTMLResponse(f"<h2 style='color:red;'>{err}</h2><a href='/'>Back</a>", status_code=400)
+            return JSONResponse({"error": err}, status_code=400)
 
         language, err = _setup_bot_language(test_dir)
         if not language:
             shutil.rmtree(tmp_dir)
-            return HTMLResponse(f"<h2 style='color:red;'>{err}</h2><a href='/'>Back</a>", status_code=400)
+            return JSONResponse({"error": err}, status_code=400)
 
         config = LANGUAGES[language]
         run_sh = test_dir / "run.sh"
@@ -804,7 +804,7 @@ async def web_upload(
             cur.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (%s, 1, %s)",
                         (bot["id"], datetime.now(MELB_TZ).isoformat()))
 
-    return RedirectResponse(url=f"/bot/{safe_name}", status_code=303)
+    return JSONResponse({"success": True, "bot_name": safe_name})
 
 
 @app.get("/api/live")
