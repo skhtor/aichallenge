@@ -595,6 +595,25 @@ def api_elo_history(bot_name: str):
     return [dict(h) for h in reversed(history)]
 
 
+@app.get("/api/sparklines")
+def api_sparklines():
+    """Return last 20 ELO values for each active bot (for leaderboard sparklines)."""
+    with db_readonly() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT id, name FROM bots WHERE active = 1")
+        bots = cur.fetchall()
+        result = {}
+        for bot in bots:
+            cur.execute(
+                "SELECT elo FROM elo_history WHERE bot_id = %s ORDER BY id DESC LIMIT 20",
+                (bot["id"],)
+            )
+            elos = [r["elo"] for r in reversed(cur.fetchall())]
+            if elos:
+                result[bot["name"]] = elos
+    return result
+
+
 @app.get("/api/head_to_head/{bot_a}/{bot_b}")
 def api_head_to_head(bot_a: str, bot_b: str):
     """Get head-to-head stats between two bots."""

@@ -130,7 +130,7 @@
             </div>
             <table class="leaderboard">
                 <thead><tr>
-                    <th>#</th><th>Bot</th><th>Team</th><th>ELO</th><th>W/L</th><th>Games</th>
+                    <th>#</th><th>Bot</th><th>Team</th><th>ELO</th><th style="width:80px;">Trend</th><th>W/L</th><th>Games</th>
                 </tr></thead>
                 <tbody id="leaderboard">
                 {% for bot in bots %}
@@ -139,6 +139,7 @@
                     <td class="bot-name"><a href="/bot/{{ bot.name }}">{{ bot.name }}</a> <span class="lang">{{ bot.language or '' }}</span></td>
                     <td style="color:#888;">{{ bot.team_name }}</td>
                     <td class="elo">{{ "%.0f"|format(bot.elo) }} <span class="elo-rd">±{{ "%.0f"|format(bot.rd or 350) }}</span></td>
+                    <td class="sparkline" data-bot="{{ bot.name }}"></td>
                     <td class="stat">{{ bot.wins }}/{{ bot.games_played - bot.wins if bot.games_played else 0 }}</td>
                     <td class="stat">{{ bot.games_played }}</td>
                 </tr>
@@ -269,6 +270,21 @@
     }
     document.querySelectorAll('.rel-time').forEach(el => el.textContent = relTime(el.dataset.time));
 
+    // Sparklines
+    fetch('/api/sparklines').then(r => r.json()).then(data => {
+        document.querySelectorAll('.sparkline[data-bot]').forEach(td => {
+            const elos = data[td.dataset.bot];
+            if (!elos || elos.length < 2) return;
+            const w = 70, h = 20;
+            const min = Math.min(...elos) - 5, max = Math.max(...elos) + 5;
+            const range = max - min || 1;
+            const step = w / (elos.length - 1);
+            const points = elos.map((e, i) => `${(i * step).toFixed(1)},${(h - (e - min) / range * h).toFixed(1)}`).join(' ');
+            const color = elos[elos.length - 1] >= elos[0] ? '#81c784' : '#e57373';
+            td.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        });
+    });
+
     // Toast helper
     function toast(msg, type = 'success') {
         const el = document.createElement('div');
@@ -353,9 +369,21 @@
                         <td class="bot-name"><a href="/bot/${b.name}">${b.name}</a> <span class="lang">${b.language||''}</span></td>
                         <td style="color:#888;">${b.team}</td>
                         <td class="elo">${Math.round(b.elo)} <span class="elo-rd">±${Math.round(b.rd||350)}</span></td>
+                        <td class="sparkline" data-bot="${b.name}"></td>
                         <td class="stat">${b.wins}/${b.games_played - b.wins}</td>
                         <td class="stat">${b.games_played}</td>
                     </tr>`).join('');
+                // Re-render sparklines
+                fetch('/api/sparklines').then(r => r.json()).then(sdata => {
+                    document.querySelectorAll('.sparkline[data-bot]').forEach(td => {
+                        const elos = sdata[td.dataset.bot];
+                        if (!elos || elos.length < 2) return;
+                        const w = 70, h = 20, min = Math.min(...elos) - 5, max = Math.max(...elos) + 5, range = max - min || 1, step = w / (elos.length - 1);
+                        const points = elos.map((e, i) => `${(i*step).toFixed(1)},${(h-(e-min)/range*h).toFixed(1)}`).join(' ');
+                        const color = elos[elos.length-1] >= elos[0] ? '#81c784' : '#e57373';
+                        td.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+                    });
+                });
             }
         } catch(e) {}
     }, 10000);
