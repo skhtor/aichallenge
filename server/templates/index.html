@@ -194,17 +194,18 @@
                     </div>
                     {% set total_score = m.players|map(attribute='score')|sum %}
                     {% if total_score > 0 %}
+                    {% set bar_colors = ['#81c784', '#64b5f6', '#ffd54f', '#e57373'] %}
                     <div class="score-bar">
                         {% for p in m.players %}
-                        <div style="width:{{ (p.score * 100 / total_score)|round }}%;background:{{ '#81c784' if p.score == max_score else '#444' }};" title="{{ p.bot_name }}: {{ p.score }}"></div>
+                        <div style="width:{{ (p.score * 100 / total_score)|round }}%;background:{{ bar_colors[loop.index0 % 4] }};" title="{{ p.bot_name }}: {{ p.score }}"></div>
+                        {% endfor %}
+                    </div>
+                    <div class="match-detail-players">
+                        {% for p in m.players %}
+                        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{{ bar_colors[loop.index0 % 4] }};margin-right:0.3rem;"></span><a href="/bot/{{ p.bot_name }}" onclick="event.stopPropagation()">{{ p.bot_name }}</a> v{{ p.bot_version or '?' }}</span>
                         {% endfor %}
                     </div>
                     {% endif %}
-                    <div class="match-detail-players">
-                        {% for p in m.players %}
-                        <span><a href="/bot/{{ p.bot_name }}" onclick="event.stopPropagation()">{{ p.bot_name }}</a> v{{ p.bot_version or '?' }}</span>
-                        {% endfor %}
-                    </div>
                 </div>
             </div>
             {% endfor %}
