@@ -362,6 +362,11 @@
 
     function showNewMatches() { location.reload(); }
 
+    // Close modals with Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+    });
+
     // In-place pagination (no scroll jump)
     document.addEventListener('click', (e) => {
         const link = e.target.closest('.pagination a');
