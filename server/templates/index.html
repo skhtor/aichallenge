@@ -142,7 +142,7 @@
         </section>
 
         <!-- Recent Matches -->
-        <section>
+        <section id="matches">
             <div class="section-header">
                 <h2>Recent Matches</h2>
                 <button id="refresh-btn" onclick="showNewMatches()" class="btn btn-ghost" style="display:none;">🔄 <span id="new-count">0</span> new</button>
@@ -324,6 +324,23 @@
     }, 10000);
 
     function showNewMatches() { location.reload(); }
+
+    // In-place pagination (no scroll jump)
+    document.addEventListener('click', (e) => {
+        const link = e.target.closest('.pagination a');
+        if (!link) return;
+        e.preventDefault();
+        const url = link.href;
+        fetch(url).then(r => r.text()).then(html => {
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const section = link.closest('section');
+            const newSection = doc.getElementById(section.id);
+            if (newSection) section.innerHTML = newSection.innerHTML;
+            // Re-apply relative times
+            section.querySelectorAll('.rel-time').forEach(el => el.textContent = relTime(el.dataset.time));
+            history.replaceState(null, '', url);
+        }).catch(() => location.href = url);
+    });
     </script>
 </body>
 </html>
