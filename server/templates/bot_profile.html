@@ -83,6 +83,11 @@
             .mgmt-row { flex-direction: column; }
             .mgmt-row input { width: 100%; }
         }
+
+        /* Skeleton loading */
+        .skeleton { position: relative; overflow: hidden; pointer-events: none; }
+        .skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, #ffffff08, transparent); animation: shimmer 1.2s infinite; }
+        @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
     </style>
 </head>
 <body>
@@ -339,18 +344,19 @@
         if (!link) return;
         e.preventDefault();
         const url = link.href;
+        const section = link.closest('section');
+        section.classList.add('skeleton');
         try {
             const res = await fetch(url);
             const html = await res.text();
             const doc = new DOMParser().parseFromString(html, 'text/html');
-            // Swap the section that contains this pagination
-            const section = link.closest('section');
-            const sectionId = section.id;
-            const newSection = doc.getElementById(sectionId);
+            const newSection = doc.getElementById(section.id);
             if (newSection) section.innerHTML = newSection.innerHTML;
             history.replaceState(null, '', url);
         } catch(err) {
             location.href = url;
+        } finally {
+            section.classList.remove('skeleton');
         }
     });
     </script>

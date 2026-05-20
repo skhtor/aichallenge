@@ -117,6 +117,11 @@
             .match-players { grid-template-columns: 1fr auto auto; }
             .match-players .status { display: none; }
         }
+
+        /* Skeleton loading */
+        .skeleton { position: relative; overflow: hidden; pointer-events: none; }
+        .skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, #ffffff08, transparent); animation: shimmer 1.2s infinite; }
+        @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
     </style>
 </head>
 <body>
@@ -392,10 +397,12 @@
                 const countEl = document.getElementById('new-count');
                 countEl.textContent = (parseInt(countEl.textContent) || 0) + newOnes.length;
                 btn.style.display = '';
-                // Refresh leaderboard
+                // Refresh leaderboard with shimmer
+                const tbody = document.getElementById('leaderboard');
+                tbody.closest('table').classList.add('skeleton');
                 const lbRes = await fetch('/api/leaderboard');
                 const bots = await lbRes.json();
-                document.getElementById('leaderboard').innerHTML = bots.map((b, i) => `
+                tbody.innerHTML = bots.map((b, i) => `
                     <tr class="${!b.active ? 'inactive' : ''}">
                         <td class="rank ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':''}">${i+1}</td>
                         <td class="bot-name"><a href="/bot/${b.name}">${b.name}</a> <span class="lang">${b.language||''}</span></td>
@@ -415,6 +422,7 @@
                         const color = elos[elos.length-1] >= elos[0] ? '#81c784' : '#e57373';
                         td.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
                     });
+                    tbody.closest('table').classList.remove('skeleton');
                 });
             }
         } catch(e) {}
@@ -433,15 +441,15 @@
         if (!link) return;
         e.preventDefault();
         const url = link.href;
+        const section = link.closest('section');
+        section.classList.add('skeleton');
         fetch(url).then(r => r.text()).then(html => {
             const doc = new DOMParser().parseFromString(html, 'text/html');
-            const section = link.closest('section');
             const newSection = doc.getElementById(section.id);
             if (newSection) section.innerHTML = newSection.innerHTML;
-            // Re-apply relative times
             section.querySelectorAll('.rel-time').forEach(el => el.textContent = relTime(el.dataset.time));
             history.replaceState(null, '', url);
-        }).catch(() => location.href = url);
+        }).catch(() => location.href = url).finally(() => section.classList.remove('skeleton'));
     });
     </script>
 </body>
