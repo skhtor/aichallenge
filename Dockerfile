@@ -35,7 +35,7 @@ COPY server/templates/ /app/server/templates/
 RUN mkdir -p /app/server/static/js /app/server/static/data
 COPY ants/visualizer/js/ /app/server/static/js/
 COPY ants/visualizer/data/ /app/server/static/data/
-COPY server/static/favicon.svg /app/server/static/
+COPY server/static/ /app/server/static/
 
 # Stage sample bots in a non-volume path (copied at startup if SEED_SAMPLE_BOTS=true)
 RUN mkdir -p /app/sample_bots /app/server/bots /app/server/replays /app/server/data && \
