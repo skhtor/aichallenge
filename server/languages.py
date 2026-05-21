@@ -39,6 +39,12 @@ LANGUAGES = {
         "run": "ruby MyBot.rb",
         "starter_dir": "ruby",
     },
+    "csharp": {
+        "detect": ["MyBot.cs"],
+        "compile": "mcs -out:MyBot.exe *.cs",
+        "run": "mono MyBot.exe",
+        "starter_dir": "csharp",
+    },
 }
 
 

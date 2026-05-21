@@ -18,6 +18,7 @@ RUN echo 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exc
     golang-go \
     nodejs \
     ruby \
+    mono-mcs \
     && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man /usr/share/locale
 
 # Copy installed Python packages from builder
