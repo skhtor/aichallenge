@@ -255,7 +255,7 @@
         <div class="modal">
             <button class="modal-close" onclick="document.getElementById('upload-modal').style.display='none'">✕</button>
             <h3>Upload your bot</h3>
-            <form method="POST" action="/upload" enctype="multipart/form-data">
+            <form id="upload-form" onsubmit="return handleUpload(event)">
                 <div class="form-group">
                     <label>Team Token</label>
                     <input type="text" name="team_token" required placeholder="Paste your token here">
@@ -266,11 +266,12 @@
                 </div>
                 <div class="form-group">
                     <label>Bot File</label>
-                    <input type="file" name="file" accept=".py,.java,.cc,.cpp,.go,.js,.rb,.zip" required style="color:#888;">
+                    <input type="file" name="file" accept=".py,.java,.cc,.cpp,.go,.js,.rb,.cs,.zip" required style="color:#888;">
                 </div>
-                <button type="submit" class="btn btn-primary" style="width:100%;padding:0.7rem;">Upload</button>
+                <div id="upload-status" style="margin-bottom:0.8rem;font-size:0.85rem;"></div>
+                <button type="submit" id="upload-btn" class="btn btn-primary" style="width:100%;padding:0.7rem;">Upload</button>
             </form>
-            <p class="form-hint">Accepts .py, .java, .cc, .cpp, .go, .js, .rb, or .zip. Compiled languages are built on upload.</p>
+            <p class="form-hint">Accepts .py, .java, .cc, .cpp, .go, .js, .rb, .cs, or .zip. Compiled languages are built on upload.</p>
         </div>
     </div>
 
@@ -477,6 +478,31 @@
         }).catch(() => location.href = url).finally(() => section.classList.remove('skeleton'));
     });
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/visualizer/sw.js');
+    async function handleUpload(e) {
+        e.preventDefault();
+        const form = document.getElementById('upload-form');
+        const status = document.getElementById('upload-status');
+        const btn = document.getElementById('upload-btn');
+        const data = new FormData(form);
+        btn.disabled = true;
+        btn.textContent = 'Uploading...';
+        status.textContent = '';
+        try {
+            const res = await fetch('/upload', { method: 'POST', body: data });
+            const json = await res.json();
+            if (json.success) {
+                status.innerHTML = '<span style="color:#81c784;">✓ Uploaded successfully! Bot is now in the match queue.</span>';
+                form.reset();
+            } else {
+                status.innerHTML = '<span style="color:#e57373;">✗ ' + (json.error || 'Upload failed') + '</span>';
+            }
+        } catch (err) {
+            status.innerHTML = '<span style="color:#e57373;">✗ Network error. Try again.</span>';
+        }
+        btn.disabled = false;
+        btn.textContent = 'Upload';
+        return false;
+    }
     </script>
 </body>
 </html>

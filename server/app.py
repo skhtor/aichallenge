@@ -349,14 +349,14 @@ def _extract_upload(bot_dir: Path, content: bytes, filename: str) -> str | None:
                     return "Invalid zip: contains path traversal"
             zf.extractall(bot_dir)
         zip_path.unlink()
-    elif any(filename.endswith(ext) for ext in (".py", ".java", ".cc", ".cpp", ".go", ".js", ".rb")):
+    elif any(filename.endswith(ext) for ext in (".py", ".java", ".cc", ".cpp", ".go", ".js", ".rb", ".cs")):
         ext = Path(filename).suffix
         entry_names = {"py": "MyBot.py", "java": "MyBot.java", "cc": "MyBot.cc",
-                       "cpp": "MyBot.cpp", "go": "MyBot.go", "js": "MyBot.js", "rb": "MyBot.rb"}
+                       "cpp": "MyBot.cpp", "go": "MyBot.go", "js": "MyBot.js", "rb": "MyBot.rb", "cs": "MyBot.cs"}
         target = entry_names.get(ext.lstrip("."), filename)
         (bot_dir / target).write_bytes(content)
     else:
-        return "Upload .zip or a source file (.py, .java, .cc, .cpp, .go, .js, .rb)"
+        return "Upload .zip or a source file (.py, .java, .cc, .cpp, .go, .js, .rb, .cs)"
     return None
 
 
@@ -364,7 +364,7 @@ def _setup_bot_language(bot_dir: Path) -> tuple[str | None, str]:
     """Detect language, copy starter libs, compile. Returns (language, error)."""
     language = detect_language(bot_dir)
     if not language:
-        return None, "Could not detect language. Ensure your entry point is named MyBot.py/java/cc/cpp/go/js/rb"
+        return None, "Could not detect language. Ensure your entry point is named MyBot.py/java/cc/cpp/go/js/rb/cs"
 
     starter_dir = get_starter_files_dir(language, ANTS_DIR)
     if starter_dir:
