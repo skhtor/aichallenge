@@ -85,7 +85,7 @@
 
         /* Modals */
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 999; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
-        .modal { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 2rem; max-width: 480px; width: 90%; position: relative; max-height: 85vh; overflow-y: auto; }
+        .modal { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 2rem; max-width: 560px; width: 90%; position: relative; max-height: 85vh; overflow-y: auto; }
         .modal h3 { color: #fff; font-size: 1.1rem; margin-bottom: 1rem; }
         .modal-close { position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: #555; font-size: 1.2rem; cursor: pointer; padding: 0.2rem; }
         .modal-close:hover { color: #fff; }
@@ -279,7 +279,31 @@
         <div class="modal" style="max-width:560px;">
             <button class="modal-close" onclick="document.getElementById('info-modal').style.display='none'">✕</button>
             <h3>How to Play</h3>
-            <p style="margin-bottom:1rem;color:#aaa;">Upload a bot that plays the <a href="http://aichallenge.org/" style="color:#81c784;">Ants</a> game. Your entry point must be named <code style="background:#111;padding:0.15rem 0.4rem;border-radius:3px;color:#81c784;">MyBot</code> with the appropriate extension.</p>
+
+            <h4 style="color:#fff;margin:1rem 0 0.5rem;">🐜 The Game</h4>
+            <p style="color:#aaa;margin-bottom:0.8rem;">Ants is a real-time strategy game where you program a bot to control a colony of ants. Your ants explore a toroidal (wrapping) map, gather food to spawn new ants, and battle enemy colonies. The goal is to raze enemy hills while protecting your own.</p>
+
+            <h4 style="color:#fff;margin:1rem 0 0.5rem;">🗺️ The Map</h4>
+            <p style="color:#aaa;margin-bottom:0.8rem;">Maps are grid-based and wrap around (toroidal). Cells are either land (passable) or water (impassable). Each player starts with one or more hills (spawn points). Food spawns periodically on the map.</p>
+
+            <h4 style="color:#fff;margin:1rem 0 0.5rem;">⚔️ Combat</h4>
+            <p style="color:#aaa;margin-bottom:0.8rem;">Combat is resolved simultaneously. When enemy ants are within attack radius of each other, the ant with more enemies nearby dies. If tied, all involved ants die. There's no randomness — combat is purely deterministic.</p>
+
+            <h4 style="color:#fff;margin:1rem 0 0.5rem;">🏆 Scoring</h4>
+            <p style="color:#aaa;margin-bottom:0.8rem;">
+                • <strong style="color:#ccc;">+2 points</strong> for razing an enemy hill<br>
+                • <strong style="color:#ccc;">−1 point</strong> when your hill is razed<br>
+                • <strong style="color:#ccc;">Bonus:</strong> if you're the last player alive, you get +2 for each remaining un-razed enemy hill<br>
+                • Highest score wins. ELO ratings are updated after each match.
+            </p>
+
+            <h4 style="color:#fff;margin:1rem 0 0.5rem;">⏱️ Game End</h4>
+            <p style="color:#aaa;margin-bottom:0.8rem;">Games end when: max turns reached (1000), one player eliminates all others, rankings stabilize (no score changes for extended period), or food stops being gathered.</p>
+
+            <h4 style="color:#fff;margin:1rem 0 0.5rem;">🤖 Your Bot</h4>
+            <p style="color:#aaa;margin-bottom:0.8rem;">Each turn, your bot receives the game state (visible ants, food, hills, water) and must output moves (N/S/E/W) for each ant within the time limit (500ms). Ants that don't move stay in place. If your bot times out or crashes, your ants stop moving.</p>
+
+            <h4 style="color:#fff;margin:1rem 0 0.5rem;">📁 Supported Languages</h4>
             <table class="info-table">
                 <thead><tr><th>Language</th><th>Entry Point</th><th>Compiled</th></tr></thead>
                 <tbody>
@@ -289,6 +313,7 @@
                     <tr><td>Go</td><td><code>MyBot.go</code></td><td>go build</td></tr>
                     <tr><td>JavaScript</td><td><code>MyBot.js</code></td><td>No</td></tr>
                     <tr><td>Ruby</td><td><code>MyBot.rb</code></td><td>No</td></tr>
+                    <tr><td>C#</td><td><code>MyBot.cs</code></td><td>mcs</td></tr>
                 </tbody>
             </table>
             <p style="color:#aaa;font-size:0.85rem;margin-bottom:1rem;">Upload a single source file or a <code style="background:#111;padding:0.15rem 0.4rem;border-radius:3px;color:#81c784;">.zip</code> containing your source files. Your bot joins the match queue immediately.</p>
