@@ -486,22 +486,52 @@
         const data = new FormData(form);
         btn.disabled = true;
         btn.textContent = 'Uploading...';
-        status.textContent = '';
+        status.innerHTML = '<span style="color:#aaa;">Uploading file...</span>';
         try {
             const res = await fetch('/upload', { method: 'POST', body: data });
-            const json = await res.json();
-            if (json.success) {
-                status.innerHTML = '<span style="color:#81c784;">✓ Uploaded successfully! Bot is now in the match queue.</span>';
-                form.reset();
-            } else {
-                status.innerHTML = '<span style="color:#e57373;">✗ ' + (json.error || 'Upload failed') + '</span>';
+            let json;
+            try { json = await res.json(); } catch { json = { error: `Server error (${res.status})` }; }
+            if (json.upload_id) {
+                status.innerHTML = '<span style="color:#aaa;">Processing...</span>';
+                pollUploadStatus(json.upload_id, status, btn, form);
+            } else if (json.error) {
+                status.innerHTML = '<span style="color:#e57373;">✗ ' + json.error + '</span>';
+                btn.disabled = false;
+                btn.textContent = 'Upload';
             }
         } catch (err) {
-            status.innerHTML = '<span style="color:#e57373;">✗ Network error. Try again.</span>';
+            status.innerHTML = '<span style="color:#e57373;">✗ Network error: ' + err.message + '</span>';
+            btn.disabled = false;
+            btn.textContent = 'Upload';
         }
-        btn.disabled = false;
-        btn.textContent = 'Upload';
         return false;
+    }
+
+    function pollUploadStatus(uploadId, status, btn, form) {
+        const poll = async () => {
+            try {
+                const res = await fetch('/api/upload_status/' + uploadId);
+                const json = await res.json();
+                if (json.status === 'processing') {
+                    status.innerHTML = '<span style="color:#aaa;">⏳ ' + (json.message || 'Processing...') + '</span>';
+                    setTimeout(poll, 1000);
+                } else if (json.status === 'done') {
+                    status.innerHTML = '<span style="color:#81c784;">✓ ' + json.message + '</span>';
+                    form.reset();
+                    btn.disabled = false;
+                    btn.textContent = 'Upload';
+                } else {
+                    status.innerHTML = '<span style="color:#e57373;">✗ ' + (json.message || 'Failed') + '</span>';
+                    btn.disabled = false;
+                    btn.textContent = 'Upload';
+                }
+            } catch {
+                status.innerHTML = '<span style="color:#e57373;">✗ Lost connection to server</span>';
+                btn.disabled = false;
+                btn.textContent = 'Upload';
+            }
+        };
+        setTimeout(poll, 1000);
     }
     </script>
 </body>

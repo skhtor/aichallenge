@@ -750,10 +750,8 @@ async def web_upload(
     bot_name: str = Form(...),
     file: UploadFile = File(...),
 ):
-    """Web form upload — detects language, compiles, validates with test match."""
-    import subprocess
-    import tempfile
-    import random
+    """Web form upload — saves file, returns immediately, compiles in background."""
+    import threading
 
     if _upload_limiter.is_limited(team_token):
         return JSONResponse({"error": "Upload too frequent. Wait 30 seconds."}, status_code=429)
@@ -778,52 +776,85 @@ async def web_upload(
             if bot_count >= MAX_BOTS_PER_TEAM:
                 return JSONResponse({"error": f"Maximum {MAX_BOTS_PER_TEAM} bots per team"}, status_code=400)
 
-        tmp_dir = Path(tempfile.mkdtemp())
-        test_dir = tmp_dir / safe_name
-        test_dir.mkdir()
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        return JSONResponse({"error": f"File too large (max {MAX_UPLOAD_SIZE // 1024 // 1024}MB)"}, status_code=413)
 
-        content = await file.read()
-        if len(content) > MAX_UPLOAD_SIZE:
+    # Generate upload ID and save to pending
+    import uuid
+    upload_id = str(uuid.uuid4())[:8]
+    _upload_status[upload_id] = {"status": "processing", "message": "Extracting files..."}
+
+    def process_upload():
+        import tempfile
+        try:
+            tmp_dir = Path(tempfile.mkdtemp())
+            test_dir = tmp_dir / safe_name
+            test_dir.mkdir()
+
+            err = _extract_upload(test_dir, content, file.filename or "MyBot.py")
+            if err:
+                shutil.rmtree(tmp_dir)
+                _upload_status[upload_id] = {"status": "error", "message": err}
+                return
+
+            _upload_status[upload_id]["message"] = "Detecting language & compiling..."
+            language, err = _setup_bot_language(test_dir)
+            if not language:
+                shutil.rmtree(tmp_dir)
+                _upload_status[upload_id] = {"status": "error", "message": err}
+                return
+
+            _upload_status[upload_id]["message"] = "Installing bot..."
+            config = LANGUAGES[language]
+            bot_dir = BOTS_DIR / safe_name
+            if bot_dir.exists():
+                shutil.rmtree(bot_dir)
+            shutil.copytree(test_dir, bot_dir)
+            run_sh = bot_dir / "run.sh"
+            run_sh.write_text(f"#!/bin/sh\ncd {bot_dir}\n{config['run']}\n")
+            run_sh.chmod(0o755)
             shutil.rmtree(tmp_dir)
-            return JSONResponse({"error": f"File too large (max {MAX_UPLOAD_SIZE // 1024 // 1024}MB)"}, status_code=413)
-        err = _extract_upload(test_dir, content, file.filename or "MyBot.py")
-        if err:
-            shutil.rmtree(tmp_dir)
-            return JSONResponse({"error": err}, status_code=400)
 
-        language, err = _setup_bot_language(test_dir)
-        if not language:
-            shutil.rmtree(tmp_dir)
-            return JSONResponse({"error": err}, status_code=400)
+            with db_conn() as conn:
+                cur = dict_cursor(conn)
+                cur.execute("SELECT id, active_version FROM bots WHERE name = %s", (safe_name,))
+                existing = cur.fetchone()
+                if existing:
+                    new_version = (existing["active_version"] or 0) + 1
+                    cur.execute("UPDATE bots SET active_version = %s, language = %s WHERE id = %s",
+                                (new_version, language, existing["id"]))
+                    cur.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (%s, %s, %s)",
+                                (existing["id"], new_version, datetime.now(MELB_TZ).isoformat()))
+                else:
+                    cur.execute("INSERT INTO bots (name, team_id, language, active_version) VALUES (%s, %s, %s, 1) RETURNING id",
+                                (safe_name, team["id"], language))
+                    bot = cur.fetchone()
+                    cur.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (%s, 1, %s)",
+                                (bot["id"], datetime.now(MELB_TZ).isoformat()))
 
-        config = LANGUAGES[language]
-        run_sh = test_dir / "run.sh"
-        run_sh.write_text(f"#!/bin/sh\ncd {test_dir}\n{config['run']}\n")
-        run_sh.chmod(0o755)
+            _upload_status[upload_id] = {"status": "done", "message": "Bot uploaded successfully!", "bot_name": safe_name}
+        except Exception as e:
+            _upload_status[upload_id] = {"status": "error", "message": f"Unexpected error: {str(e)[:200]}"}
 
-        bot_dir = BOTS_DIR / safe_name
-        if bot_dir.exists():
-            shutil.rmtree(bot_dir)
-        shutil.copytree(test_dir, bot_dir)
-        final_run_sh = bot_dir / "run.sh"
-        final_run_sh.write_text(f"#!/bin/sh\ncd {bot_dir}\n{config['run']}\n")
-        final_run_sh.chmod(0o755)
-        shutil.rmtree(tmp_dir)
+    threading.Thread(target=process_upload, daemon=True).start()
+    return JSONResponse({"success": True, "upload_id": upload_id})
 
-        if existing:
-            new_version = (existing["active_version"] or 0) + 1
-            cur.execute("UPDATE bots SET active_version = %s, language = %s WHERE id = %s",
-                        (new_version, language, existing["id"]))
-            cur.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (%s, %s, %s)",
-                        (existing["id"], new_version, datetime.now(MELB_TZ).isoformat()))
-        else:
-            cur.execute("INSERT INTO bots (name, team_id, language, active_version) VALUES (%s, %s, %s, 1) RETURNING id",
-                        (safe_name, team["id"], language))
-            bot = cur.fetchone()
-            cur.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (%s, 1, %s)",
-                        (bot["id"], datetime.now(MELB_TZ).isoformat()))
 
-    return JSONResponse({"success": True, "bot_name": safe_name})
+# Upload status tracking
+_upload_status: dict = {}
+
+
+@app.get("/api/upload_status/{upload_id}")
+def get_upload_status(upload_id: str):
+    """Poll upload processing status."""
+    status = _upload_status.get(upload_id)
+    if not status:
+        raise HTTPException(404, "Unknown upload ID")
+    # Clean up completed statuses after retrieval
+    if status["status"] in ("done", "error"):
+        _upload_status.pop(upload_id, None)
+    return JSONResponse(status)
 
 
 @app.get("/api/live")
