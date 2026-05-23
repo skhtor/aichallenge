@@ -1069,7 +1069,10 @@ const AntsVisualizer = (() => {
         const rd = this.replay.replaydata || this.replay;
         const sa = (this.scores[a] ? this.scores[a][Math.min(t, this.scores[a].length - 1)] || 0 : 0) + (t >= this.maxTurn && rd.bonus ? rd.bonus[a] || 0 : 0);
         const sb = (this.scores[b] ? this.scores[b][Math.min(t, this.scores[b].length - 1)] || 0 : 0) + (t >= this.maxTurn && rd.bonus ? rd.bonus[b] || 0 : 0);
-        return sb - sa;
+        if (sb !== sa) return sb - sa;
+        const aa = this.antCounts ? this.antCounts[a][Math.min(t, this.maxTurn)] || 0 : 0;
+        const ab = this.antCounts ? this.antCounts[b][Math.min(t, this.maxTurn)] || 0 : 0;
+        return ab - aa;
       });
 
       for (let rank = 0; rank < numP; rank++) {
