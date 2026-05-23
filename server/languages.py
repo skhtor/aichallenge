@@ -17,7 +17,7 @@ LANGUAGES = {
     },
     "cpp": {
         "detect": ["MyBot.cc", "MyBot.cpp"],
-        "compile": "g++ -O2 -o MyBot *.cc *.cpp 2>/dev/null || g++ -O2 -o MyBot *.cc 2>/dev/null || g++ -O2 -o MyBot *.cpp",
+        "compile": "g++ -O2 -std=c++17 -o MyBot *.cc *.cpp 2>/dev/null || g++ -O2 -std=c++17 -o MyBot *.cc 2>/dev/null || g++ -O2 -std=c++17 -o MyBot *.cpp",
         "run": "./MyBot",
         "starter_dir": "cpp",
     },

@@ -430,20 +430,30 @@ async def upload_bot(
             shutil.rmtree(version_dir)
             raise HTTPException(400, err)
 
-        language, err = _setup_bot_language(version_dir)
+        language = detect_language(version_dir)
         if not language:
             shutil.rmtree(version_dir)
-            raise HTTPException(400, err)
+            raise HTTPException(400, "Could not detect language. Ensure your entry point is named MyBot.py/java/cc/cpp/go/js/rb/cs")
 
-        active_link = bot_dir / "active"
-        if active_link.exists() or active_link.is_symlink():
-            active_link.unlink()
-        active_link.symlink_to(version_dir)
+        # Do compilation in background thread
+        import threading
+        def _compile_and_activate():
+            _lang, err = _setup_bot_language(version_dir)
+            if err:
+                shutil.rmtree(version_dir)
+                return
 
-        config = LANGUAGES[language]
-        run_sh = version_dir / "run.sh"
-        run_sh.write_text(f"#!/bin/sh\ncd {version_dir}\n{config['run']}\n")
-        run_sh.chmod(0o755)
+            active_link = bot_dir / "active"
+            if active_link.exists() or active_link.is_symlink():
+                active_link.unlink()
+            active_link.symlink_to(version_dir)
+
+            config = LANGUAGES[_lang]
+            run_sh = version_dir / "run.sh"
+            run_sh.write_text(f"#!/bin/sh\ncd {version_dir}\n{config['run']}\n")
+            run_sh.chmod(0o755)
+
+        threading.Thread(target=_compile_and_activate, daemon=True).start()
 
         if existing:
             cur.execute("UPDATE bots SET active_version = %s, language = %s WHERE id = %s",
