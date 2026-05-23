@@ -11,7 +11,7 @@ LANGUAGES = {
     },
     "java": {
         "detect": ["MyBot.java"],
-        "compile": "javac *.java",
+        "compile": "javac $(find . -name '*.java')",
         "run": "java MyBot",
         "starter_dir": "java",
     },
@@ -41,7 +41,7 @@ LANGUAGES = {
     },
     "csharp": {
         "detect": ["MyBot.cs"],
-        "compile": "mcs -out:MyBot.exe *.cs",
+        "compile": "mcs -out:MyBot.exe $(find . -name '*.cs')",
         "run": "mono MyBot.exe",
         "starter_dir": "csharp",
     },

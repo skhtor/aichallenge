@@ -66,8 +66,8 @@ class RateLimiter:
         return False
 
 
-_upload_limiter = RateLimiter(cooldown=30)
-_register_limiter = RateLimiter(cooldown=10)
+_upload_limiter = RateLimiter(cooldown=12)
+_register_limiter = RateLimiter(cooldown=5)
 _test_limiter = RateLimiter(cooldown=10)
 _admin_limiter = RateLimiter(cooldown=5)
 
@@ -435,23 +435,28 @@ async def upload_bot(
             shutil.rmtree(version_dir)
             raise HTTPException(400, "Could not detect language. Ensure your entry point is named MyBot.py/java/cc/cpp/go/js/rb/cs")
 
-        # Do compilation in background thread
+        # Compile in background, activate only on success
         import threading
         def _compile_and_activate():
-            _lang, err = _setup_bot_language(version_dir)
-            if err:
-                shutil.rmtree(version_dir)
-                return
+            try:
+                _lang, err = _setup_bot_language(version_dir)
+                if err:
+                    print(f"[Upload] Compilation failed for {safe_name}: {err}", flush=True)
+                    shutil.rmtree(version_dir)
+                    return
 
-            active_link = bot_dir / "active"
-            if active_link.exists() or active_link.is_symlink():
-                active_link.unlink()
-            active_link.symlink_to(version_dir)
+                active_link = bot_dir / "active"
+                if active_link.exists() or active_link.is_symlink():
+                    active_link.unlink()
+                active_link.symlink_to(version_dir)
 
-            config = LANGUAGES[_lang]
-            run_sh = version_dir / "run.sh"
-            run_sh.write_text(f"#!/bin/sh\ncd {version_dir}\n{config['run']}\n")
-            run_sh.chmod(0o755)
+                config = LANGUAGES[_lang]
+                run_sh = version_dir / "run.sh"
+                run_sh.write_text(f"#!/bin/sh\ncd {version_dir}\n{config['run']}\n")
+                run_sh.chmod(0o755)
+                print(f"[Upload] {safe_name} compiled successfully", flush=True)
+            except Exception as e:
+                print(f"[Upload] Exception compiling {safe_name}: {e}", flush=True)
 
         threading.Thread(target=_compile_and_activate, daemon=True).start()
 
@@ -818,6 +823,15 @@ async def web_upload(
             _upload_status[upload_id]["message"] = "Installing bot..."
             config = LANGUAGES[language]
             bot_dir = BOTS_DIR / safe_name
+
+            # Verify the compiled bot has actual files (not just run.sh)
+            bot_files = [f for f in test_dir.iterdir() if f.name != 'run.sh']
+            if not bot_files:
+                shutil.rmtree(tmp_dir)
+                _upload_status[upload_id] = {"status": "error", "message": "Compilation produced no output files"}
+                return
+
+            # Only replace old bot after verification
             if bot_dir.exists():
                 shutil.rmtree(bot_dir)
             shutil.copytree(test_dir, bot_dir)
