@@ -826,6 +826,7 @@ const AntsVisualizer = (() => {
       }
 
       // Proximity rings for hills under threat
+      if (!this._hillRingR) this._hillRingR = {};
       const threatRadius = 10; // cells
       for (const h of this.hills) {
         const [hRow, hCol, owner, razeTurn] = h;
@@ -847,11 +848,15 @@ const AntsVisualizer = (() => {
           if (dist < minDist) minDist = dist;
         }
         if (minDist <= threatRadius) {
+          const targetR = Math.max(cs * 1.5, (minDist - 1) * cs);
+          const key = `${hRow},${hCol}`;
+          const prev = this._hillRingR[key] || targetR;
+          const ringR = prev + (targetR - prev) * 0.15;
+          this._hillRingR[key] = ringR;
           const dc = ((hCol - this.shiftX) % this.cols + this.cols) % this.cols;
           const dr2 = ((hRow - this.shiftY) % this.rows + this.rows) % this.rows;
           const hx = ox + dc * cs + cs / 2;
           const hy = oy + dr2 * cs + cs / 2;
-          const ringR = Math.max(cs * 1.5, (minDist - 1) * cs);
           const alpha = Math.max(0, 1 - minDist / threatRadius);
           const color = PLAYER_COLORS[owner % PLAYER_COLORS.length];
           for (let wy = hy - mapH; wy <= this.viewH + mapH; wy += mapH) {
@@ -872,6 +877,8 @@ const AntsVisualizer = (() => {
             }
           }
           ctx.globalAlpha = 1;
+        } else {
+          delete this._hillRingR[`${hRow},${hCol}`];
         }
       }
 
