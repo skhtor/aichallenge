@@ -825,6 +825,56 @@ const AntsVisualizer = (() => {
         }
       }
 
+      // Proximity rings for hills under threat
+      const threatRadius = 10; // cells
+      for (const h of this.hills) {
+        const [hRow, hCol, owner, razeTurn] = h;
+        if (t >= razeTurn) continue; // skip razed hills
+        // Find closest enemy ant
+        let minDist = Infinity;
+        for (const ant of this.ants) {
+          if (ant.player === owner) continue;
+          if (t < ant.spawn || t >= ant.death) continue;
+          const idx = t - ant.spawn;
+          let dr = ant.posY[idx] - hRow;
+          let dc = ant.posX[idx] - hCol;
+          // Toroidal distance
+          if (dr > this.rows / 2) dr -= this.rows;
+          if (dr < -this.rows / 2) dr += this.rows;
+          if (dc > this.cols / 2) dc -= this.cols;
+          if (dc < -this.cols / 2) dc += this.cols;
+          const dist = Math.sqrt(dr * dr + dc * dc);
+          if (dist < minDist) minDist = dist;
+        }
+        if (minDist <= threatRadius) {
+          const dc = ((hCol - this.shiftX) % this.cols + this.cols) % this.cols;
+          const dr2 = ((hRow - this.shiftY) % this.rows + this.rows) % this.rows;
+          const hx = ox + dc * cs + cs / 2;
+          const hy = oy + dr2 * cs + cs / 2;
+          const ringR = Math.max(cs * 1.5, (minDist - 1) * cs);
+          const alpha = Math.max(0, 1 - minDist / threatRadius);
+          const color = PLAYER_COLORS[owner % PLAYER_COLORS.length];
+          for (let wy = hy - mapH; wy <= this.viewH + mapH; wy += mapH) {
+            if (wy < -ringR || wy > this.viewH + ringR) continue;
+            for (let wx = hx - mapW; wx <= this.viewW + mapW; wx += mapW) {
+              if (wx < -ringR || wx > this.viewW + ringR) continue;
+              ctx.strokeStyle = color;
+              ctx.lineWidth = Math.max(1.5, cs * 0.15);
+              ctx.globalAlpha = alpha * 0.7;
+              ctx.beginPath();
+              ctx.arc(wx, wy, ringR, 0, Math.PI * 2);
+              ctx.stroke();
+              // Inner ring slightly smaller
+              ctx.globalAlpha = alpha * 0.3;
+              ctx.beginPath();
+              ctx.arc(wx, wy, ringR - cs * 0.5, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // Draw ants
       const antRadius = cs * 0.4;
       const frac = Math.min((this.turnFrac || 0) * 2, 1);
