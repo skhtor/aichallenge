@@ -39,23 +39,24 @@ def _set_limits():
 
 # --- Game Logic ---
 
-def pick_map():
+def pick_map(num_players=4):
+    """Pick a random map for the given player count."""
     maps_dir = ANTS_DIR / "maps"
+    patterns = [f"*p{num_players:02d}*", f"*_{num_players:02d}p*"]
     all_maps = []
     for subdir in maps_dir.iterdir():
         if subdir.is_dir():
-            for f in subdir.glob("*p04*.map"):
-                all_maps.append(f)
-            for f in subdir.glob("*_04p*.map"):
-                all_maps.append(f)
+            for pat in patterns:
+                for f in subdir.glob(pat):
+                    all_maps.append(f)
     if not all_maps:
         all_maps = list(maps_dir.rglob("*.map"))
     return random.choice(all_maps) if all_maps else None
 
 
-def run_single_game(bot_ids, bot_names, bot_versions, bot_languages):
-    """Run a single 4-player game with resource-limited bots."""
-    map_file = pick_map()
+def run_single_game(bot_ids, bot_names, bot_versions, bot_languages, num_players=4):
+    """Run a single game with resource-limited bots."""
+    map_file = pick_map(num_players)
     if not map_file:
         return None
 
@@ -163,14 +164,14 @@ def archive_old_data(conn, cur):
         """, (bot["id"], bot["id"], MAX_ELO_HISTORY_PER_BOT))
 
 
-def select_match_bots(bots):
-    """ELO-based matchmaking: pick a seed bot, then 3 closest by ELO."""
+def select_match_bots(bots, num_players=4):
+    """ELO-based matchmaking: pick a seed bot, then closest by ELO."""
     bots = list(bots)
     seed = random.choice(bots)
     others = [b for b in bots if b["id"] != seed["id"]]
     others.sort(key=lambda b: abs(b["elo"] - seed["elo"]))
-    pool = others[:min(6, len(others))]
-    partners = random.sample(pool, min(3, len(pool)))
+    pool = others[:min(num_players * 2, len(others))]
+    partners = random.sample(pool, min(num_players - 1, len(pool)))
     return [seed] + partners
 
 
@@ -184,19 +185,29 @@ def game_loop():
                 cur.execute("SELECT id, name, elo, rd, volatility, active_version, language FROM bots WHERE active = 1")
                 bots = cur.fetchall()
 
-            if len(bots) < 4:
-                print(f"[Worker] Only {len(bots)} bots, need 4. Waiting...")
+            if len(bots) < 2:
+                print(f"[Worker] Only {len(bots)} bots, need at least 2. Waiting...")
                 time.sleep(5)
                 continue
 
-            selected = select_match_bots(bots)
+            # Pick player count based on available bots
+            max_players = min(10, len(bots))
+            possible_counts = [n for n in range(2, 11) if n <= max_players]
+            # Weight toward 4-player games
+            weights = [3 if n == 4 else 2 if n in (2, 3) else 1 for n in possible_counts]
+            num_players = random.choices(possible_counts, weights=weights, k=1)[0]
+
+            selected = select_match_bots(bots, num_players)
+            if len(selected) < num_players:
+                time.sleep(2)
+                continue
             bot_ids = [b["id"] for b in selected]
             bot_names = [b["name"] for b in selected]
             bot_versions = [b["active_version"] for b in selected]
             bot_languages = [b["language"] for b in selected]
 
             print(f"[Worker] Match: {bot_names}")
-            result = run_single_game(bot_ids, bot_names, bot_versions, bot_languages)
+            result = run_single_game(bot_ids, bot_names, bot_versions, bot_languages, num_players)
 
             if result is None:
                 time.sleep(2)
