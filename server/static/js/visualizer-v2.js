@@ -1077,7 +1077,12 @@ const AntsVisualizer = (() => {
 
       for (let rank = 0; rank < numP; rank++) {
         const p = order[rank];
-        const y = tableTop + rowH * (rank + 1);
+        const targetY = tableTop + rowH * (rank + 1);
+        // Animate row position
+        if (!this._scoreboardY) this._scoreboardY = {};
+        if (this._scoreboardY[p] === undefined) this._scoreboardY[p] = targetY;
+        this._scoreboardY[p] += (targetY - this._scoreboardY[p]) * 0.12;
+        const y = this._scoreboardY[p];
         const cy = y + rowH / 2 + 4;
         const color = PLAYER_COLORS[p % PLAYER_COLORS.length];
         const name = this.playerNames[p] || `Player ${p + 1}`;
