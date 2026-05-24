@@ -239,6 +239,116 @@ def replay_data(match_id: int):
     return FileResponse(replay_path, media_type="application/json")
 
 
+@app.get("/api/match_stats/{match_id}")
+def api_match_stats(match_id: int):
+    """Compute per-player combat stats from replay data."""
+    with db_readonly() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT replay_file FROM matches WHERE id = %s", (match_id,))
+        match = cur.fetchone()
+        cur.execute("""
+            SELECT b.name, mp.player_index, mp.score, mp.status
+            FROM match_players mp JOIN bots b ON mp.bot_id = b.id
+            WHERE mp.match_id = %s ORDER BY mp.player_index
+        """, (match_id,))
+        players = cur.fetchall()
+    if not match or not match["replay_file"]:
+        raise HTTPException(404, "Match not found")
+    replay_path = (REPLAYS_DIR / match["replay_file"]).resolve()
+    if not replay_path.exists():
+        raise HTTPException(404, "Replay file missing")
+
+    with open(replay_path) as f:
+        replay = json.load(f)
+
+    rd = replay.get("replaydata", {})
+    game_length = replay.get("game_length", 0)
+    scores = replay.get("score", [])
+    ants_data = rd.get("ants", [])
+    food_data = rd.get("food", [])
+    num_players = rd.get("players", len(players))
+    rows = rd.get("map", {}).get("rows", 100)
+    cols = rd.get("map", {}).get("cols", 100)
+
+    # Use engine-provided kills/deaths if available (new replays)
+    engine_kills = rd.get("kills")
+    engine_deaths = rd.get("deaths")
+
+    # Fallback: compute from replay data for old replays without engine stats
+    if engine_kills is None:
+        attackradius2 = 5
+        DIR_DELTA = {'n': (-1, 0), 's': (1, 0), 'e': (0, 1), 'w': (0, -1)}
+
+        def get_pos_at_turn(ant, turn):
+            r, c = ant[0], ant[1]
+            moves = ant[5] if len(ant) > 5 else ""
+            steps = min(turn - ant[2], len(moves))
+            for ch in moves[:steps]:
+                if ch in DIR_DELTA:
+                    dr, dc = DIR_DELTA[ch]
+                    r = (r + dr) % rows
+                    c = (c + dc) % cols
+            return r, c
+
+        ants_by_owner = [[] for _ in range(num_players)]
+        for a in ants_data:
+            if len(a) >= 5 and a[4] < num_players:
+                ants_by_owner[a[4]].append(a)
+
+        engine_kills = [0] * num_players
+        engine_deaths = [0] * num_players
+        for idx in range(num_players):
+            engine_deaths[idx] = sum(1 for a in ants_by_owner[idx] if a[3] < game_length)
+            for enemy_owner in range(num_players):
+                if enemy_owner == idx:
+                    continue
+                for enemy in ants_by_owner[enemy_owner]:
+                    if enemy[3] >= game_length:
+                        continue
+                    death_turn = enemy[3]
+                    er, ec = get_pos_at_turn(enemy, death_turn)
+                    for ally in ants_by_owner[idx]:
+                        if ally[2] > death_turn or ally[3] <= death_turn:
+                            continue
+                        ar, ac = get_pos_at_turn(ally, death_turn)
+                        dr = min(abs(ar - er), rows - abs(ar - er))
+                        dc = min(abs(ac - ec), cols - abs(ac - ec))
+                        if dr * dr + dc * dc <= attackradius2:
+                            engine_kills[idx] += 1
+                            break
+
+    stats = []
+    for idx in range(num_players):
+        my_kills = engine_kills[idx] if idx < len(engine_kills) else 0
+        my_deaths = engine_deaths[idx] if idx < len(engine_deaths) else 0
+        my_spawned = sum(1 for a in ants_data if len(a) >= 5 and a[4] == idx)
+        my_food = sum(1 for f in food_data if len(f) >= 5 and f[4] == idx)
+
+        player_name = players[idx]["name"] if idx < len(players) else f"player_{idx}"
+        max_score = max(scores) if scores else 0
+        stats.append({
+            "player": player_name,
+            "player_index": idx,
+            "score": scores[idx] if idx < len(scores) else 0,
+            "score_pct": round(scores[idx] / max_score * 100, 1) if max_score > 0 and idx < len(scores) else 0,
+            "status": players[idx]["status"] if idx < len(players) else "unknown",
+            "kills": my_kills,
+            "deaths": my_deaths,
+            "kd_ratio": round(my_kills / my_deaths, 2) if my_deaths > 0 else float(my_kills),
+            "ants_spawned": my_spawned,
+            "survival_rate_pct": round((my_spawned - my_deaths) / my_spawned * 100, 1) if my_spawned > 0 else 0,
+            "food_collected": my_food,
+            "food_latency_avg": rd.get("food_latency", [None]*num_players)[idx] if rd.get("food_latency") else None,
+            "exploration_pct": rd.get("exploration_pct", [None]*num_players)[idx] if rd.get("exploration_pct") else None,
+        })
+
+    return {
+        "match_id": match_id,
+        "game_length": game_length,
+        "players": stats,
+    }
+
+
 @app.get("/bot/{bot_name}", response_class=HTMLResponse)
 def bot_profile(bot_name: str, request: Request):
     matches_page = max(1, int(request.query_params.get("matches_page", "1")))

@@ -155,6 +155,17 @@ class Ants(Game):
         self.bonus = [0]*self.num_players
         self.score_history = [[s] for s in self.score]
 
+        # combat stats
+        self.kills = [0]*self.num_players
+        self.deaths = [0]*self.num_players
+
+        # food pickup latency (turns from spawn to collection)
+        self.food_latency_sum = [0]*self.num_players
+        self.food_latency_count = [0]*self.num_players
+
+        # exploration: unique cells ever seen per player
+        self.explored = [set() for _ in range(self.num_players)]
+
         # used to remember where the ants started
         self.initial_ant_list = sorted(self.current_ants.values(), key=operator.attrgetter('owner'))
         self.initial_access_map = self.access_map()
@@ -732,6 +743,10 @@ class Ants(Game):
             if owner is not None:
                 self.current_food[loc].owner = owner
                 self.hive_food[owner] += 1
+                # track food pickup latency
+                latency = self.turn - self.current_food[loc].start_turn
+                self.food_latency_sum[owner] += latency
+                self.food_latency_count[owner] += 1
             return self.current_food.pop(loc)
         except KeyError:
             raise Exception("Remove food error",
@@ -902,6 +917,11 @@ class Ants(Game):
 
         # kill ants and distribute score
         for ant in ants_to_kill:
+            self.deaths[ant.owner] += 1
+            # credit kill to each enemy owner who had an ant in range
+            killers = set(enemy.owner for enemy in nearby_enemies[ant])
+            for killer in killers:
+                self.kills[killer] += 1
             self.kill_ant(ant)
 
     def do_attack_closest(self):
@@ -1495,6 +1515,14 @@ class Ants(Game):
         self.update_vision()
         self.update_revealed()
 
+        # track exploration: accumulate newly visible cells per player
+        for player in range(self.num_players):
+            if not self.is_alive(player):
+                continue
+            for ant in self.player_ants(player):
+                r, c = ant.loc
+                for dr, dc in self.vision_offsets_cache['new']:
+                    self.explored[player].add(((r + dr) % self.height, (c + dc) % self.width))
         # calculate population counts for stopping games early
         # FOOD can end the game as well, since no one is gathering it
         pop_count = defaultdict(int)
@@ -1741,6 +1769,24 @@ class Ants(Game):
         replay['winning_turn'] = self.winning_turn
         replay['ranking_turn'] = self.ranking_turn
         replay['cutoff'] =  self.cutoff
+
+        # combat stats
+        replay['kills'] = self.kills
+        replay['deaths'] = self.deaths
+
+        # food pickup latency (avg turns from spawn to collection)
+        replay['food_latency'] = [
+            round(self.food_latency_sum[i] / self.food_latency_count[i], 1) if self.food_latency_count[i] > 0 else None
+            for i in range(self.num_players)
+        ]
+        replay['food_collected'] = self.food_latency_count
+
+        # exploration (% of map seen by each player)
+        map_cells = self.height * self.width
+        replay['exploration_pct'] = [
+            round(len(self.explored[i]) / map_cells * 100, 1)
+            for i in range(self.num_players)
+        ]
 
         return replay
 
