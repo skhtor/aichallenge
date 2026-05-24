@@ -49,7 +49,7 @@ RUN mkdir -p /app/sample_bots /app/server/bots /app/server/replays /app/server/d
 
 EXPOSE 5000
 
-RUN useradd -r -s /bin/false appuser && \
+RUN useradd -r -s /bin/false -m appuser && \
     chown -R appuser:appuser /app/server/bots /app/server/replays /app/server/data /app/server
 USER appuser
 
