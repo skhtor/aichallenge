@@ -678,11 +678,15 @@ const AntsVisualizer = (() => {
       }
       if (this.loop) text += ' 🔁';
       this.turnLabel.textContent = text;
-      // Update URL with current turn
+      // Update URL with current turn (throttled)
       if (this.replay) {
-        const url = new URL(window.location);
-        url.searchParams.set('t', this.turn);
-        history.replaceState(null, '', url);
+        const now = performance.now();
+        if (!this._lastUrlUpdate || now - this._lastUrlUpdate > 500) {
+          this._lastUrlUpdate = now;
+          const url = new URL(window.location);
+          url.searchParams.set('t', this.turn);
+          history.replaceState(null, '', url);
+        }
       }
     }
 
@@ -825,31 +829,40 @@ const AntsVisualizer = (() => {
         }
       }
 
-      // Proximity rings for hills under threat
+      // Proximity rings for hills under threat (distances cached per turn)
       if (!this._hillRingR) this._hillRingR = {};
-      const threatRadius = 10; // cells
+      if (this._threatTurn !== t) {
+        this._threatTurn = t;
+        this._threatDist = {};
+        const threatRadius = 10;
+        for (const h of this.hills) {
+          const [hRow, hCol, owner, razeTurn] = h;
+          if (t >= razeTurn) continue;
+          let minDist = Infinity;
+          for (const ant of this.ants) {
+            if (ant.player === owner) continue;
+            if (t < ant.spawn || t >= ant.death) continue;
+            const idx = t - ant.spawn;
+            let dr = ant.posY[idx] - hRow;
+            let dc = ant.posX[idx] - hCol;
+            if (dr > this.rows / 2) dr -= this.rows;
+            if (dr < -this.rows / 2) dr += this.rows;
+            if (dc > this.cols / 2) dc -= this.cols;
+            if (dc < -this.cols / 2) dc += this.cols;
+            const dist = Math.sqrt(dr * dr + dc * dc);
+            if (dist < minDist) minDist = dist;
+          }
+          if (minDist <= threatRadius) this._threatDist[`${hRow},${hCol}`] = minDist;
+        }
+      }
+      const threatRadius = 10;
       for (const h of this.hills) {
         const [hRow, hCol, owner, razeTurn] = h;
-        if (t >= razeTurn) continue; // skip razed hills
-        // Find closest enemy ant
-        let minDist = Infinity;
-        for (const ant of this.ants) {
-          if (ant.player === owner) continue;
-          if (t < ant.spawn || t >= ant.death) continue;
-          const idx = t - ant.spawn;
-          let dr = ant.posY[idx] - hRow;
-          let dc = ant.posX[idx] - hCol;
-          // Toroidal distance
-          if (dr > this.rows / 2) dr -= this.rows;
-          if (dr < -this.rows / 2) dr += this.rows;
-          if (dc > this.cols / 2) dc -= this.cols;
-          if (dc < -this.cols / 2) dc += this.cols;
-          const dist = Math.sqrt(dr * dr + dc * dc);
-          if (dist < minDist) minDist = dist;
-        }
-        if (minDist <= threatRadius) {
+        if (t >= razeTurn) continue;
+        const key = `${hRow},${hCol}`;
+        const minDist = this._threatDist[key];
+        if (minDist !== undefined) {
           const targetR = Math.max(cs * 1.5, (minDist - 1) * cs);
-          const key = `${hRow},${hCol}`;
           const prev = this._hillRingR[key] || targetR;
           const ringR = prev + (targetR - prev) * 0.15;
           this._hillRingR[key] = ringR;
@@ -981,48 +994,58 @@ const AntsVisualizer = (() => {
         ctx.imageSmoothingEnabled = true;
       }
 
-      // Draw combat lines (dying ants to nearby enemies)
-      const ar2 = (this.replay.replaydata || this.replay).attackradius2 || 5;
-      const combatAnts = [];
-      for (const ant of this.ants) {
-        if (t < ant.spawn || t >= ant.death) continue;
-        const idx = t - ant.spawn;
-        const ni = Math.min(idx + 1, ant.posX.length - 1);
-        combatAnts.push({ col: ant.posX[ni], row: ant.posY[ni], player: ant.player, dies: ant.death === t + 1 });
-      }
-      ctx.lineWidth = Math.max(1, Math.pow(cs, 0.3));
-      ctx.globalAlpha = 0.8;
-      for (let i = 0; i < combatAnts.length; i++) {
-        if (!combatAnts[i].dies) continue;
-        for (let k = 0; k < combatAnts.length; k++) {
-          if (k === i) continue;
-          if (combatAnts[i].player === combatAnts[k].player) continue;
-          let dx = combatAnts[k].col - combatAnts[i].col;
-          let dy = combatAnts[k].row - combatAnts[i].row;
-          if (dx > this.cols / 2) dx -= this.cols;
-          if (dx < -this.cols / 2) dx += this.cols;
-          if (dy > this.rows / 2) dy -= this.rows;
-          if (dy < -this.rows / 2) dy += this.rows;
-          if (dx * dx + dy * dy <= ar2) {
-            const cx = ((combatAnts[i].col - this.shiftX) % this.cols + this.cols) % this.cols;
-            const cy = ((combatAnts[i].row - this.shiftY) % this.rows + this.rows) % this.rows;
-            const x1 = ox + cx * cs + cs / 2;
-            const y1 = oy + cy * cs + cs / 2;
-            const x2 = x1 + dx * cs * 0.5;
-            const y2 = y1 + dy * cs * 0.5;
-            ctx.strokeStyle = PLAYER_COLORS[combatAnts[i].player % PLAYER_COLORS.length];
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
+      // Draw combat lines (dying ants to nearby enemies) - cached per turn
+      if (this._combatTurn !== t) {
+        this._combatTurn = t;
+        this._combatLines = [];
+        const ar2 = (this.replay.replaydata || this.replay).attackradius2 || 5;
+        const combatAnts = [];
+        for (const ant of this.ants) {
+          if (t < ant.spawn || t >= ant.death) continue;
+          const idx = t - ant.spawn;
+          const ni = Math.min(idx + 1, ant.posX.length - 1);
+          combatAnts.push({ col: ant.posX[ni], row: ant.posY[ni], player: ant.player, dies: ant.death === t + 1 });
+        }
+        for (let i = 0; i < combatAnts.length; i++) {
+          if (!combatAnts[i].dies) continue;
+          for (let k = 0; k < combatAnts.length; k++) {
+            if (k === i) continue;
+            if (combatAnts[i].player === combatAnts[k].player) continue;
+            let dx = combatAnts[k].col - combatAnts[i].col;
+            let dy = combatAnts[k].row - combatAnts[i].row;
+            if (dx > this.cols / 2) dx -= this.cols;
+            if (dx < -this.cols / 2) dx += this.cols;
+            if (dy > this.rows / 2) dy -= this.rows;
+            if (dy < -this.rows / 2) dy += this.rows;
+            if (dx * dx + dy * dy <= ar2) {
+              this._combatLines.push({ col: combatAnts[i].col, row: combatAnts[i].row, dx, dy, player: combatAnts[i].player });
+            }
           }
         }
       }
-      ctx.globalAlpha = 1;
+      if (this._combatLines.length) {
+        ctx.lineWidth = Math.max(1, Math.pow(cs, 0.3));
+        ctx.globalAlpha = 0.8;
+        for (const cl of this._combatLines) {
+          const cx = ((cl.col - this.shiftX) % this.cols + this.cols) % this.cols;
+          const cy = ((cl.row - this.shiftY) % this.rows + this.rows) % this.rows;
+          const x1 = ox + cx * cs + cs / 2;
+          const y1 = oy + cy * cs + cs / 2;
+          ctx.strokeStyle = PLAYER_COLORS[cl.player % PLAYER_COLORS.length];
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x1 + cl.dx * cs * 0.5, y1 + cl.dy * cs * 0.5);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
 
       // Draw scoreboard
       this._drawScoreboard(ctx);
-      this._drawGraphBar();
+      if (this._graphTurnCache !== this.turn) {
+        this._graphTurnCache = this.turn;
+        this._drawGraphBar();
+      }
     }
 
     _drawScoreboard(ctx) {
