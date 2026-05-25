@@ -470,9 +470,10 @@ def _extract_upload(bot_dir: Path, content: bytes, filename: str) -> str | None:
     return None
 
 
-def _setup_bot_language(bot_dir: Path) -> tuple[str | None, str]:
-    """Detect language, copy starter libs, compile. Returns (language, error)."""
-    language = detect_language(bot_dir)
+def _setup_bot_language(bot_dir: Path, language: str = None) -> tuple[str | None, str]:
+    """Compile bot with given language. Falls back to detection if not provided. Returns (language, error)."""
+    if not language or language not in LANGUAGES:
+        language = detect_language(bot_dir)
     if not language:
         return None, "Could not detect language. Ensure your entry point is named MyBot.py/java/cc/cpp/go/js/rb/cs"
 
@@ -496,8 +497,9 @@ async def upload_bot(
     bot_name: str = Form(...),
     file: UploadFile = File(...),
     authorization: str = Header(...),
+    language: str = Form(...),
 ):
-    """Upload a bot. Requires Authorization header with team token."""
+    """Upload a bot. Requires Authorization header with team token and language (go, python, java, cpp, javascript, ruby, csharp)."""
     token = authorization.replace("Bearer ", "").strip()
 
     if _upload_limiter.is_limited(token):
@@ -540,16 +542,16 @@ async def upload_bot(
             shutil.rmtree(version_dir)
             raise HTTPException(400, err)
 
-        language = detect_language(version_dir)
+        language = language if language in LANGUAGES else detect_language(version_dir)
         if not language:
             shutil.rmtree(version_dir)
-            raise HTTPException(400, "Could not detect language. Ensure your entry point is named MyBot.py/java/cc/cpp/go/js/rb/cs")
+            raise HTTPException(400, "Invalid language. Supported: " + ", ".join(LANGUAGES.keys()))
 
         # Compile in background, activate only on success
         import threading
         def _compile_and_activate():
             try:
-                _lang, err = _setup_bot_language(version_dir)
+                _lang, err = _setup_bot_language(version_dir, language)
                 if err:
                     print(f"[Upload] Compilation failed for {safe_name}: {err}", flush=True)
                     shutil.rmtree(version_dir)
@@ -915,6 +917,7 @@ async def test_match(
 async def web_upload(
     team_token: str = Form(...),
     bot_name: str = Form(...),
+    language: str = Form(...),
     file: UploadFile = File(...),
 ):
     """Web form upload — saves file, returns immediately, compiles in background."""
@@ -966,8 +969,8 @@ async def web_upload(
                 return
 
             _upload_status[upload_id]["message"] = "Detecting language & compiling..."
-            language, err = _setup_bot_language(test_dir)
-            if not language:
+            _lang, err = _setup_bot_language(test_dir, language)
+            if err:
                 shutil.rmtree(tmp_dir)
                 _upload_status[upload_id] = {"status": "error", "message": err}
                 return

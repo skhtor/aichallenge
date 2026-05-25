@@ -3,6 +3,12 @@ import subprocess
 from pathlib import Path
 
 LANGUAGES = {
+    "go": {
+        "detect": ["MyBot.go"],
+        "compile": "go build -o MyBot .",
+        "run": "./MyBot",
+        "starter_dir": "go",
+    },
     "python": {
         "detect": ["MyBot.py"],
         "compile": None,
@@ -20,12 +26,6 @@ LANGUAGES = {
         "compile": "g++ -O2 -std=c++17 -o MyBot *.cc *.cpp 2>/dev/null || g++ -O2 -std=c++17 -o MyBot *.cc 2>/dev/null || g++ -O2 -std=c++17 -o MyBot *.cpp",
         "run": "./MyBot",
         "starter_dir": "cpp",
-    },
-    "go": {
-        "detect": ["MyBot.go"],
-        "compile": "go build -o MyBot .",
-        "run": "./MyBot",
-        "starter_dir": "go",
     },
     "javascript": {
         "detect": ["MyBot.js"],
