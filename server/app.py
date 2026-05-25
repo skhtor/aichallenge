@@ -941,21 +941,39 @@ async def web_upload(
                 _upload_status[upload_id] = {"status": "error", "message": "Compilation produced no output files"}
                 return
 
-            # Only replace old bot after verification
-            if bot_dir.exists():
-                shutil.rmtree(bot_dir)
-            shutil.copytree(test_dir, bot_dir)
-            run_sh = bot_dir / "run.sh"
-            run_sh.write_text(f"#!/bin/sh\ncd {bot_dir}\n{config['run']}\n")
+            # Version management: use v{N} subdirectories with active symlink
+            bot_dir.mkdir(exist_ok=True)
+            with db_conn() as conn:
+                cur = dict_cursor(conn)
+                cur.execute("SELECT id, active_version FROM bots WHERE name = %s", (safe_name,))
+                existing = cur.fetchone()
+                new_version = (existing["active_version"] or 0) + 1 if existing else 1
+
+            version_dir = bot_dir / f"v{new_version}"
+            if version_dir.exists():
+                shutil.rmtree(version_dir)
+            shutil.copytree(test_dir, version_dir)
+            run_sh = version_dir / "run.sh"
+            run_sh.write_text(f"#!/bin/sh\ncd {version_dir}\n{config['run']}\n")
             run_sh.chmod(0o755)
             shutil.rmtree(tmp_dir)
+
+            # Atomically switch active symlink
+            active_link = bot_dir / "active"
+            tmp_link = bot_dir / "active_tmp"
+            tmp_link.symlink_to(version_dir)
+            tmp_link.rename(active_link)
+
+            # Also keep a top-level run.sh for backwards compat with worker
+            top_run_sh = bot_dir / "run.sh"
+            top_run_sh.write_text(f"#!/bin/sh\ncd {version_dir}\n{config['run']}\n")
+            top_run_sh.chmod(0o755)
 
             with db_conn() as conn:
                 cur = dict_cursor(conn)
                 cur.execute("SELECT id, active_version FROM bots WHERE name = %s", (safe_name,))
                 existing = cur.fetchone()
                 if existing:
-                    new_version = (existing["active_version"] or 0) + 1
                     cur.execute("UPDATE bots SET active_version = %s, language = %s WHERE id = %s",
                                 (new_version, language, existing["id"]))
                     cur.execute("INSERT INTO bot_versions (bot_id, version, uploaded_at) VALUES (%s, %s, %s)",
@@ -968,6 +986,15 @@ async def web_upload(
                                 (bot["id"], datetime.now(MELB_TZ).isoformat()))
 
             _upload_status[upload_id] = {"status": "done", "message": "Bot uploaded successfully!", "bot_name": safe_name}
+
+            # Cleanup old versions (keep last 5)
+            MAX_VERSIONS = 5
+            version_dirs = sorted(
+                [d for d in (BOTS_DIR / safe_name).iterdir() if d.is_dir() and d.name.startswith("v")],
+                key=lambda d: int(d.name[1:]), reverse=True
+            )
+            for old_dir in version_dirs[MAX_VERSIONS:]:
+                shutil.rmtree(old_dir, ignore_errors=True)
         except Exception as e:
             _upload_status[upload_id] = {"status": "error", "message": f"Unexpected error: {str(e)[:200]}"}
 
