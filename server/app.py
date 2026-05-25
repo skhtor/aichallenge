@@ -599,7 +599,7 @@ def api_leaderboard():
     with db_readonly() as conn:
         cur = dict_cursor(conn)
         cur.execute("""
-            SELECT b.name, t.name as team, b.elo, b.rd, b.games_played, b.wins, b.language, b.active
+            SELECT b.name, t.name as team, b.elo, b.rd, b.games_played, b.wins, b.language, b.active, b.active_version
             FROM bots b JOIN teams t ON b.team_id = t.id ORDER BY b.elo DESC
         """)
         bots = cur.fetchall()
@@ -696,12 +696,54 @@ def delete_bot(bot_name: str, authorization: str = Header(...)):
 
 
 @app.get("/api/matches")
-def api_matches():
+def api_matches(bot: str = None, min_players: int = None, max_players: int = None, min_turns: int = None, max_turns: int = None, limit: int = 50, offset: int = 0):
     with db_readonly() as conn:
         cur = dict_cursor(conn)
-        cur.execute("SELECT * FROM matches ORDER BY id DESC LIMIT 50")
-        matches = cur.fetchall()
-    return [dict(m) for m in matches]
+        conditions = []
+        params = []
+        if bot:
+            conditions.append("m.id IN (SELECT match_id FROM match_players mp2 JOIN bots b2 ON mp2.bot_id = b2.id WHERE b2.name ILIKE %s)")
+            params.append(f"%{bot}%")
+        if min_players:
+            conditions.append("(SELECT COUNT(*) FROM match_players mp3 WHERE mp3.match_id = m.id) >= %s")
+            params.append(min_players)
+        if max_players:
+            conditions.append("(SELECT COUNT(*) FROM match_players mp4 WHERE mp4.match_id = m.id) <= %s")
+            params.append(max_players)
+        if min_turns:
+            conditions.append("m.turns >= %s")
+            params.append(min_turns)
+        if max_turns:
+            conditions.append("m.turns <= %s")
+            params.append(max_turns)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        cur.execute(f"""
+            SELECT m.id, m.played_at, m.turns, m.map_file, m.replay_file,
+                   mp.bot_id, mp.bot_version, mp.player_index, mp.score, mp.status, mp.elo_change,
+                   b.name as bot_name
+            FROM matches m
+            JOIN match_players mp ON mp.match_id = m.id
+            JOIN bots b ON mp.bot_id = b.id
+            {where}
+            ORDER BY m.id DESC, mp.player_index
+            LIMIT %s OFFSET %s
+        """, params + [limit * 10, offset])  # fetch extra rows since multiple per match
+        rows = cur.fetchall()
+
+    matches = []
+    current = None
+    for row in rows:
+        row = dict(row)
+        if not current or current["match"]["id"] != row["id"]:
+            if current:
+                matches.append(current)
+            if len(matches) >= limit:
+                break
+            current = {"match": {"id": row["id"], "played_at": str(row["played_at"]), "turns": row["turns"], "map_file": row["map_file"], "replay_file": row["replay_file"]}, "players": []}
+        current["players"].append({"bot_name": row["bot_name"], "bot_version": row["bot_version"], "score": row["score"], "status": row["status"], "elo_change": float(row["elo_change"] or 0)})
+    if current and len(matches) < limit:
+        matches.append(current)
+    return matches
 
 
 @app.get("/api/elo_history/{bot_name}")
