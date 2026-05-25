@@ -18,11 +18,6 @@ See [SERVER_INSTRUCTIONS.md](SERVER_INSTRUCTIONS.md) for full usage details (upl
 |-----------|-------------|
 | `server/` | FastAPI web server, match worker, database layer |
 | `ants/` | Game engine, starter packages, maps, visualizer |
-| `sql/` | Legacy SQL schema files |
-| `manager/` | Legacy tournament manager |
-| `worker/` | Legacy standalone workers |
-| `website/` | Legacy PHP frontend |
-| `setup/` | Legacy server provisioning scripts |
 
 ## Development
 
