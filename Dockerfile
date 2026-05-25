@@ -26,7 +26,6 @@ COPY --from=builder /install /usr/local
 
 # Copy engine
 COPY ants/ /app/ants/
-COPY worker/ /app/worker/
 
 # Copy server
 COPY server/app.py server/worker.py server/db.py server/languages.py server/glicko2.py /app/server/
