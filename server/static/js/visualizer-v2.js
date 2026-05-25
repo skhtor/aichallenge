@@ -58,6 +58,13 @@ const AntsVisualizer = (() => {
       this.playerNames = this.replay.playernames || [];
       this.fogPlayer = -1; // -1 = no fog, 0+ = show that player's vision
       this.viewRadius2 = (this.replay.replaydata || this.replay).viewradius2 || 77;
+      // Populate fog dropdown
+      const fogSelect = this.controls.querySelector('.av-fog-select');
+      fogSelect.innerHTML = '<option value="-1">👁 All</option>';
+      for (let i = 0; i < (this.scores.length || 0); i++) {
+        const name = this.playerNames[i] || `Player ${i + 1}`;
+        fogSelect.innerHTML += `<option value="${i}">${name}</option>`;
+      }
       // Precompute ant counts per player per turn
       const numP = this.scores.length || (this.replay.replaydata || this.replay).players || 2;
       this.antCounts = Array.from({length: numP}, () => new Int16Array(this.maxTurn + 1));
@@ -230,7 +237,9 @@ const AntsVisualizer = (() => {
         <canvas class="av-graph-bar"></canvas>
         <div class="av-toolbar">
           <div class="av-toolbar-left">
-            <button class="av-btn av-fog-btn" data-action="fog" title="Toggle fog of war">👁 All</button>
+            <select class="av-fog-select" data-action="fog-select" title="Fog of war">
+              <option value="-1">👁 All</option>
+            </select>
           </div>
           <div class="av-toolbar-center">
             <button class="av-btn" data-action="start">⏮︎</button>
@@ -269,9 +278,13 @@ const AntsVisualizer = (() => {
           case 'fwd': this._setTurn(Math.min(this.maxTurn, this.turn + 1), true); break;
           case 'slower': this._changeSpeed(-1); break;
           case 'faster': this._changeSpeed(1); break;
-          case 'fog': this._toggleFog(); break;
           case 'loop': this._toggleLoop(); break;
         }
+      });
+
+      this.controls.querySelector('.av-fog-select').addEventListener('change', e => {
+        this.fogPlayer = parseInt(e.target.value);
+        if (!this.playing) this._render();
       });
 
       this.graphBar.addEventListener('mousedown', e => {
@@ -318,15 +331,7 @@ const AntsVisualizer = (() => {
           const p = order[clickedRank];
           if (p !== undefined) {
             this.fogPlayer = this.fogPlayer === p ? -1 : p;
-            const btn = this.controls.querySelector('.av-fog-btn');
-            if (this.fogPlayer < 0) {
-              btn.textContent = '👁 All';
-              btn.style.borderColor = '#444';
-            } else {
-              const name = this.playerNames[this.fogPlayer] || `P${this.fogPlayer + 1}`;
-              btn.textContent = '👁 ' + name;
-              btn.style.borderColor = PLAYER_COLORS[this.fogPlayer % PLAYER_COLORS.length];
-            }
+            this.controls.querySelector('.av-fog-select').value = this.fogPlayer;
             if (!this.playing) this._render();
           }
         }
@@ -449,21 +454,6 @@ const AntsVisualizer = (() => {
       const next = Math.max(0, Math.min(speeds.length - 1, i + dir));
       this.speed = speeds[next];
       this.speedLabel.textContent = this.speed + '×';
-    }
-
-    _toggleFog() {
-      const numP = this.scores.length || 2;
-      this.fogPlayer = (this.fogPlayer + 2) % (numP + 1) - 1; // cycles -1, 0, 1, 2, ...
-      const btn = this.controls.querySelector('.av-fog-btn');
-      if (this.fogPlayer < 0) {
-        btn.textContent = '👁 All';
-        btn.style.borderColor = '#444';
-      } else {
-        const name = this.playerNames[this.fogPlayer] || `P${this.fogPlayer + 1}`;
-        btn.textContent = '👁 ' + name;
-        btn.style.borderColor = PLAYER_COLORS[this.fogPlayer % PLAYER_COLORS.length];
-      }
-      if (!this.playing) this._render();
     }
 
     _seekFromGraph(e) {
