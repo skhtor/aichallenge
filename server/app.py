@@ -477,8 +477,9 @@ def _setup_bot_language(bot_dir: Path, language: str = None) -> tuple[str | None
     if not language:
         return None, "Could not detect language. Ensure your entry point is named MyBot.py/java/cc/cpp/go/js/rb/cs"
 
+    # Copy starter library files (e.g. ants.py for Python) unless bot is self-contained
     starter_dir = get_starter_files_dir(language, ANTS_DIR)
-    if starter_dir:
+    if starter_dir and not (bot_dir / "go.mod").exists():
         for f in starter_dir.iterdir():
             if f.is_file() and f.name.startswith("MyBot"):
                 continue
