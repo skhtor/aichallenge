@@ -194,7 +194,7 @@ def game_loop():
             max_players = min(10, len(bots))
             possible_counts = [n for n in range(2, 11) if n <= max_players]
             # Weight toward 4-player games
-            weights = [6 if n == 2 else 8 if n == 3 else 10 if n == 4 else 3 if n == 5 else 2 if n == 6 else 1 for n in possible_counts]
+            weights = [6 if n == 2 else 8 if n == 3 else 12 if n == 4 else 6 if n == 5 else 4 if n == 6 else 0.4 for n in possible_counts]
             num_players = random.choices(possible_counts, weights=weights, k=1)[0]
 
             selected = select_match_bots(bots, num_players)
