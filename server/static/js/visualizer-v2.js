@@ -393,6 +393,43 @@ const AntsVisualizer = (() => {
         this.offsetY = (this.viewH - this.cellSize * this.rows) / 2;
         if (!this.playing) this._render();
       }, { passive: false });
+
+      // Touch events for mobile
+      this.canvas.addEventListener('touchstart', e => {
+        e.preventDefault();
+        if (e.touches.length === 1) {
+          this._touchDragging = true;
+          this._touchX = e.touches[0].clientX;
+          this._touchY = e.touches[0].clientY;
+        } else if (e.touches.length === 2) {
+          this._pinchDist = Math.hypot(e.touches[1].clientX - e.touches[0].clientX, e.touches[1].clientY - e.touches[0].clientY);
+        }
+      }, { passive: false });
+      this.canvas.addEventListener('touchmove', e => {
+        e.preventDefault();
+        if (e.touches.length === 1 && this._touchDragging) {
+          const dx = e.touches[0].clientX - this._touchX;
+          const dy = e.touches[0].clientY - this._touchY;
+          this._touchX = e.touches[0].clientX;
+          this._touchY = e.touches[0].clientY;
+          this.shiftX -= dx / this.cellSize;
+          this.shiftY -= dy / this.cellSize;
+          if (!this.playing) this._render();
+        } else if (e.touches.length === 2) {
+          const dist = Math.hypot(e.touches[1].clientX - e.touches[0].clientX, e.touches[1].clientY - e.touches[0].clientY);
+          if (this._pinchDist) {
+            const scale = dist / this._pinchDist;
+            this.zoom *= scale;
+            this.zoom = Math.max(0.5, Math.min(10, this.zoom));
+            this.cellSize = Math.min(this.viewW / this.cols, this.viewH / this.rows) * this.zoom;
+            this.offsetX = (this.viewW - this.cellSize * this.cols) / 2;
+            this.offsetY = (this.viewH - this.cellSize * this.rows) / 2;
+            if (!this.playing) this._render();
+          }
+          this._pinchDist = dist;
+        }
+      }, { passive: false });
+      this.canvas.addEventListener('touchend', () => { this._touchDragging = false; this._pinchDist = null; });
     }
 
     _resize() {
@@ -1043,7 +1080,7 @@ const AntsVisualizer = (() => {
       const numP = this.scores.length;
       const pad = 10;
       const rowH = 24;
-      const panelW = 280;
+      const panelW = this.viewW < 500 ? 160 : 280;
       const totalRows = numP + 1; // header + players
       const tableH = rowH * totalRows;
       const panelH = 6 + tableH + 6;
@@ -1055,10 +1092,11 @@ const AntsVisualizer = (() => {
       ctx.fill();
 
       // Column positions (right-aligned values)
+      const mobile = this.viewW < 500;
       const colName = pad + 14;
-      const colHills = pad + panelW - 145;
-      const colRazed = pad + panelW - 105;
-      const colAnts = pad + panelW - 65;
+      const colHills = mobile ? null : pad + panelW - 145;
+      const colRazed = mobile ? null : pad + panelW - 105;
+      const colAnts = pad + panelW - (mobile ? 45 : 65);
       const colScore = pad + panelW - 20;
 
       // Header row
@@ -1067,8 +1105,8 @@ const AntsVisualizer = (() => {
       ctx.font = '9px -apple-system, sans-serif';
       ctx.fillStyle = '#666';
       ctx.textAlign = 'right';
-      ctx.fillText('Hills', colHills, hy);
-      ctx.fillText('Razed', colRazed, hy);
+      if (colHills) ctx.fillText('Hills', colHills, hy);
+      if (colRazed) ctx.fillText('Razed', colRazed, hy);
       ctx.fillText('Ants', colAnts, hy);
       ctx.fillText('Score', colScore, hy);
       ctx.textAlign = 'left';
@@ -1130,12 +1168,17 @@ const AntsVisualizer = (() => {
         ctx.textAlign = 'right';
 
         // Hills owned/total
-        ctx.fillStyle = hillsOwned > 0 ? '#ccc' : '#e57373';
-        ctx.fillText(`${hillsOwned}/${hillsStart}`, colHills, cy);
+        // Hills owned/total
+        if (colHills) {
+          ctx.fillStyle = hillsOwned > 0 ? '#ccc' : '#e57373';
+          ctx.fillText(`${hillsOwned}/${hillsStart}`, colHills, cy);
+        }
 
         // Hills razed
-        ctx.fillStyle = hillsRazed > 0 ? '#81c784' : '#666';
-        ctx.fillText(hillsRazed, colRazed, cy);
+        if (colRazed) {
+          ctx.fillStyle = hillsRazed > 0 ? '#81c784' : '#666';
+          ctx.fillText(hillsRazed, colRazed, cy);
+        }
 
         // Ant count
         ctx.fillStyle = ants > 0 ? '#ccc' : '#e57373';
