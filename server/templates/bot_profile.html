@@ -179,7 +179,7 @@
                     <td>v{{ v.version }}</td>
                     <td style="color:#666;">{{ v.uploaded_at[:16].replace('T', ' ') }}</td>
                     <td>{% if v.version == bot.active_version %}<span style="color:#81c784;font-weight:500;">● Active</span>{% else %}<span style="color:#555;">Inactive</span>{% endif %}</td>
-                    <td>{% if v.version != bot.active_version %}<button onclick="rollback({{ v.version }})" class="btn btn-primary" style="font-size:0.75rem;padding:0.2rem 0.6rem;">Make Active</button>{% endif %}</td>
+                    <td>{% if v.version != bot.active_version and v.on_disk %}<button onclick="rollback({{ v.version }})" class="btn btn-primary" style="font-size:0.75rem;padding:0.2rem 0.6rem;">Make Active</button>{% elif not v.on_disk %}<span style="color:#555;font-size:0.75rem;">removed</span>{% endif %}</td>
                 </tr>
                 {% endfor %}
                 </tbody>

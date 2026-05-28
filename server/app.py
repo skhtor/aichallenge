@@ -372,6 +372,10 @@ def bot_profile(bot_name: str, request: Request):
         cur.execute("SELECT * FROM bot_versions WHERE bot_id = %s ORDER BY version DESC LIMIT %s OFFSET %s",
                     (bot["id"], per_page, (versions_page - 1) * per_page))
         versions = [dict(r) for r in cur.fetchall()]
+        # Mark which versions still exist on disk
+        bot_dir = BOTS_DIR / bot_name
+        for v in versions:
+            v["on_disk"] = (bot_dir / f"v{v['version']}").exists()
 
         cur.execute("SELECT COUNT(*) as cnt FROM match_players WHERE bot_id = %s", (bot["id"],))
         matches_total = cur.fetchone()["cnt"]
