@@ -1,7 +1,7 @@
 """Glicko-2 rating system for multi-player (FFA) matches."""
 import math
 
-TAU = 0.5
+TAU = 0.3
 EPSILON = 0.000001
 DEFAULT_RATING = 1500.0
 DEFAULT_RD = 350.0

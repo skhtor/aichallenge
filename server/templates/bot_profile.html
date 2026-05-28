@@ -170,19 +170,21 @@
 
         <!-- Versions -->
         <section id="versions">
-            <div class="section-header"><h2>Versions</h2></div>
+            <div class="section-header"><h2>Versions</h2><span style="color:#666;font-size:0.8rem;margin-left:0.5rem;">Choose which version runs in matches</span></div>
             <table>
-                <thead><tr><th>Version</th><th>Uploaded</th><th></th></tr></thead>
+                <thead><tr><th>Version</th><th>Uploaded</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                 {% for v in versions %}
-                <tr>
-                    <td>v{{ v.version }}{% if v.version == bot.active_version %} <span style="color:#81c784;font-size:0.75rem;">active</span>{% endif %}</td>
+                <tr{% if v.version == bot.active_version %} style="background:#1a2e1a;"{% endif %}>
+                    <td>v{{ v.version }}</td>
                     <td style="color:#666;">{{ v.uploaded_at[:16].replace('T', ' ') }}</td>
-                    <td>{% if v.version != bot.active_version and loop.index <= 5 %}<button onclick="rollback({{ v.version }})" class="btn btn-ghost" style="font-size:0.75rem;padding:0.2rem 0.6rem;">↩ Rollback</button>{% endif %}</td>
+                    <td>{% if v.version == bot.active_version %}<span style="color:#81c784;font-weight:500;">● Active</span>{% else %}<span style="color:#555;">Inactive</span>{% endif %}</td>
+                    <td>{% if v.version != bot.active_version %}<button onclick="rollback({{ v.version }})" class="btn btn-primary" style="font-size:0.75rem;padding:0.2rem 0.6rem;">Make Active</button>{% endif %}</td>
                 </tr>
                 {% endfor %}
                 </tbody>
             </table>
+            <p style="color:#555;font-size:0.8rem;margin-top:0.5rem;">Last 5 versions are kept. Select any version to use in future matches.</p>
             {% if versions_total_pages > 1 %}
             <div class="pagination" id="versions-pagination">
                 {% if versions_page > 1 %}<a href="?versions_page={{ versions_page - 1 }}&matches_page={{ matches_page }}" data-section="versions">← Prev</a>{% endif %}
@@ -295,7 +297,7 @@
         if (!token) { showMgmt('Enter your team token', true); return; }
         const res = await fetch(`/api/bot/${botName}/rollback/${version}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
         const data = await res.json();
-        showMgmt(res.ok ? `Rolled back to v${version}` : data.detail, !res.ok);
+        showMgmt(res.ok ? `v${version} is now active` : data.detail, !res.ok);
         if (res.ok) setTimeout(() => location.reload(), 1000);
     }
 

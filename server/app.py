@@ -528,7 +528,8 @@ async def upload_bot(
 
         bot_dir = BOTS_DIR / safe_name
         bot_dir.mkdir(exist_ok=True)
-        new_version = (existing["active_version"] or 0) + 1 if existing else 1
+        existing_versions = [int(d.name[1:]) for d in bot_dir.iterdir() if d.is_dir() and d.name.startswith("v") and d.name[1:].isdigit()]
+        new_version = (max(existing_versions) + 1) if existing_versions else 1
         version_dir = bot_dir / f"v{new_version}"
         if version_dir.exists():
             shutil.rmtree(version_dir)
@@ -993,7 +994,9 @@ async def web_upload(
                 cur = dict_cursor(conn)
                 cur.execute("SELECT id, active_version FROM bots WHERE name = %s", (safe_name,))
                 existing = cur.fetchone()
-                new_version = (existing["active_version"] or 0) + 1 if existing else 1
+                # Use highest version on disk to avoid duplicates after rollback
+                existing_versions = [int(d.name[1:]) for d in bot_dir.iterdir() if d.is_dir() and d.name.startswith("v") and d.name[1:].isdigit()]
+                new_version = (max(existing_versions) + 1) if existing_versions else 1
 
             version_dir = bot_dir / f"v{new_version}"
             if version_dir.exists():
