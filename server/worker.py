@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 MELB_TZ = ZoneInfo("Australia/Melbourne")
 
 from db import db_conn, db_readonly, dict_cursor, init_db
-from glicko2 import update_ratings
+from rating import update_ratings
 from languages import get_run_command, LANGUAGES
 
 BASE_DIR = Path(__file__).parent
@@ -213,9 +213,9 @@ def game_loop():
                 time.sleep(2)
                 continue
 
-            # Glicko-2 update
+            # TrueSkill update
             glicko_players = [
-                {"rating": b["elo"], "rd": b["rd"] or 350, "vol": b["volatility"] or 0.06, "score": result["scores"][i]}
+                {"rating": b["elo"], "rd": b["rd"] or 250, "vol": b["volatility"] or 0.06, "score": result["scores"][i]}
                 for i, b in enumerate(selected)
             ]
             updated = update_ratings(glicko_players)

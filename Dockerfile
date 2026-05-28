@@ -29,7 +29,7 @@ COPY ants/ /app/ants/
 RUN mkdir -p /app/worker && cp /app/ants/engine.py /app/worker/engine.py && cp /app/ants/sandbox.py /app/worker/sandbox.py
 
 # Copy server
-COPY server/app.py server/worker.py server/db.py server/languages.py server/glicko2.py /app/server/
+COPY server/app.py server/worker.py server/db.py server/languages.py server/rating.py /app/server/
 COPY server/templates/ /app/server/templates/
 
 # Copy static assets
