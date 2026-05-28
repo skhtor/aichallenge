@@ -1,4 +1,4 @@
-.PHONY: up down build logs restart ps db-shell
+.PHONY: up down build logs restart ps db-shell invite-code
 
 up:
 	docker-compose up -d
@@ -20,3 +20,6 @@ ps:
 
 db-shell:
 	docker-compose exec db psql -U ants -d ants
+
+invite-code:
+	@curl -s -X POST https://ants.sass.sh/api/admin/invite-codes -H "Authorization: $${ADMIN_SECRET}" -F "count=1"

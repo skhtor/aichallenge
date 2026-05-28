@@ -170,13 +170,13 @@ def select_match_bots(bots, num_players=4):
     seed = random.choice(bots)
     others = [b for b in bots if b["id"] != seed["id"]]
     others.sort(key=lambda b: abs(b["elo"] - seed["elo"]))
-    pool = others[:min(num_players * 2, len(others))]
+    pool = others[:min(num_players + 2, len(others))]
     partners = random.sample(pool, min(num_players - 1, len(pool)))
     return [seed] + partners
 
 
 def game_loop():
-    """Continuously pick 4 bots via ELO matchmaking and run matches."""
+    """Continuously pick bots via ELO matchmaking and run matches."""
     print("[Worker] Starting game loop...")
     while True:
         try:
