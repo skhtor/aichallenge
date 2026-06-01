@@ -1028,32 +1028,25 @@ const AntsVisualizer = (() => {
         const ar2 = (this.replay.replaydata || this.replay).attackradius2 || 5;
         const combatAnts = [];
         for (const ant of this.ants) {
-          if (t < ant.spawn || t >= ant.death) continue;
-          const idx = t - ant.spawn;
-          const ni = Math.min(idx + 1, ant.posX.length - 1);
-          combatAnts.push({ col: ant.posX[idx], row: ant.posY[idx], ncol: ant.posX[ni], nrow: ant.posY[ni], player: ant.player, dies: ant.death === t + 1 });
+          if (t < ant.spawn || t > ant.death) continue;
+          const dying = ant.death === t;
+          const idx = Math.min(t - ant.spawn, ant.posX.length - 1);
+          combatAnts.push({ col: ant.posX[idx], row: ant.posY[idx], ncol: ant.posX[idx], nrow: ant.posY[idx], player: ant.player, dies: dying });
         }
         for (let i = 0; i < combatAnts.length; i++) {
           if (!combatAnts[i].dies) continue;
           for (let k = 0; k < combatAnts.length; k++) {
             if (k === i) continue;
             if (combatAnts[i].player === combatAnts[k].player) continue;
-            let dx = combatAnts[k].ncol - combatAnts[i].ncol;
-            let dy = combatAnts[k].nrow - combatAnts[i].nrow;
+            let dx = combatAnts[k].col - combatAnts[i].col;
+            let dy = combatAnts[k].row - combatAnts[i].row;
             if (dx > this.cols / 2) dx -= this.cols;
             if (dx < -this.cols / 2) dx += this.cols;
             if (dy > this.rows / 2) dy -= this.rows;
             if (dy < -this.rows / 2) dy += this.rows;
             if (dx * dx + dy * dy <= ar2) {
-              // Draw from current position toward opponent's current position
-              let ddx = combatAnts[k].col - combatAnts[i].col;
-              let ddy = combatAnts[k].row - combatAnts[i].row;
-              if (ddx > this.cols / 2) ddx -= this.cols;
-              if (ddx < -this.cols / 2) ddx += this.cols;
-              if (ddy > this.rows / 2) ddy -= this.rows;
-              if (ddy < -this.rows / 2) ddy += this.rows;
               const color = combatAnts[k].dies ? -1 : combatAnts[k].player;
-              this._combatLines.push({ col: combatAnts[i].col, row: combatAnts[i].row, dx: ddx, dy: ddy, color });
+              this._combatLines.push({ col: combatAnts[i].col, row: combatAnts[i].row, dx, dy, color });
             }
           }
         }
