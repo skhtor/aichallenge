@@ -904,7 +904,7 @@ const AntsVisualizer = (() => {
             for (let wx = hx - mapW; wx <= this.viewW + mapW; wx += mapW) {
               if (wx < -ringR || wx > this.viewW + ringR) continue;
               ctx.strokeStyle = color;
-              ctx.lineWidth = Math.max(1.5, cs * 0.15);
+              ctx.lineWidth = Math.max(2.5, cs * 0.25);
               ctx.globalAlpha = alpha * 0.7;
               ctx.beginPath();
               ctx.arc(wx, wy, ringR, 0, Math.PI * 2);
@@ -1031,21 +1031,29 @@ const AntsVisualizer = (() => {
           if (t < ant.spawn || t >= ant.death) continue;
           const idx = t - ant.spawn;
           const ni = Math.min(idx + 1, ant.posX.length - 1);
-          combatAnts.push({ col: ant.posX[ni], row: ant.posY[ni], player: ant.player, dies: ant.death === t + 1 });
+          combatAnts.push({ col: ant.posX[idx], row: ant.posY[idx], ncol: ant.posX[ni], nrow: ant.posY[ni], player: ant.player, dies: ant.death === t + 1 });
         }
         for (let i = 0; i < combatAnts.length; i++) {
           if (!combatAnts[i].dies) continue;
           for (let k = 0; k < combatAnts.length; k++) {
             if (k === i) continue;
             if (combatAnts[i].player === combatAnts[k].player) continue;
-            let dx = combatAnts[k].col - combatAnts[i].col;
-            let dy = combatAnts[k].row - combatAnts[i].row;
+            let dx = combatAnts[k].ncol - combatAnts[i].ncol;
+            let dy = combatAnts[k].nrow - combatAnts[i].nrow;
             if (dx > this.cols / 2) dx -= this.cols;
             if (dx < -this.cols / 2) dx += this.cols;
             if (dy > this.rows / 2) dy -= this.rows;
             if (dy < -this.rows / 2) dy += this.rows;
             if (dx * dx + dy * dy <= ar2) {
-              this._combatLines.push({ col: combatAnts[i].col, row: combatAnts[i].row, dx, dy, player: combatAnts[i].player });
+              // Draw from current position toward opponent's current position
+              let ddx = combatAnts[k].col - combatAnts[i].col;
+              let ddy = combatAnts[k].row - combatAnts[i].row;
+              if (ddx > this.cols / 2) ddx -= this.cols;
+              if (ddx < -this.cols / 2) ddx += this.cols;
+              if (ddy > this.rows / 2) ddy -= this.rows;
+              if (ddy < -this.rows / 2) ddy += this.rows;
+              const color = combatAnts[k].dies ? -1 : combatAnts[k].player;
+              this._combatLines.push({ col: combatAnts[i].col, row: combatAnts[i].row, dx: ddx, dy: ddy, color });
             }
           }
         }
@@ -1058,10 +1066,10 @@ const AntsVisualizer = (() => {
           const cy = ((cl.row - this.shiftY) % this.rows + this.rows) % this.rows;
           const x1 = ox + cx * cs + cs / 2;
           const y1 = oy + cy * cs + cs / 2;
-          ctx.strokeStyle = PLAYER_COLORS[cl.player % PLAYER_COLORS.length];
+          ctx.strokeStyle = cl.color === -1 ? '#fff' : PLAYER_COLORS[cl.color % PLAYER_COLORS.length];
           ctx.beginPath();
           ctx.moveTo(x1, y1);
-          ctx.lineTo(x1 + cl.dx * cs * 0.5, y1 + cl.dy * cs * 0.5);
+          ctx.lineTo(x1 + cl.dx * cs, y1 + cl.dy * cs);
           ctx.stroke();
         }
         ctx.globalAlpha = 1;
