@@ -9,14 +9,14 @@
     <script src="/visualizer/js/visualizer-v2.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body { height: 100%; background: #0d0d0d; color: #ccc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-        header { background: #161616; border-bottom: 1px solid #222; padding: 0.8rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+        html, body { height: 100%; background: #0d0d0d; color: #ccc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
+        header { background: #161616; border-bottom: 1px solid #222; padding: 0.8rem 2rem; display: flex; align-items: center; justify-content: space-between; position: fixed; top: 0; left: 0; right: 0; z-index: 20; height: 48px; }
         header a { color: #666; text-decoration: none; font-size: 0.85rem; }
         header a:hover { color: #aaa; }
         header .match-label { color: #fff; font-size: 0.9rem; font-weight: 600; }
         header .logo { color: #fff; font-weight: 700; font-size: 1rem; text-decoration: none; }
         header .logo span { color: #4caf50; }
-        #viewer { width: 100%; height: calc(100vh - 52px); position: relative; outline: none; }
+        #viewer { width: 100%; height: calc(100vh - 48px); position: relative; outline: none; top: 48px; }
         .av-controls {
             position: absolute; bottom: 0; left: 0; right: 0;
             background: rgba(22,22,22,0.95); border-top: 1px solid #333;
@@ -42,11 +42,15 @@
         .av-fog-select { background: #2a2a2a; border: 1px solid #444; color: #ddd; border-radius: 4px; padding: 4px 6px; font-size: 12px; cursor: pointer; }
         .av-error { color: #e57373; text-align: center; padding: 3rem; font-size: 1.1rem; }
         @media (max-width: 600px) {
-            .av-graph-bar { height: 50px; }
-            .av-toolbar { padding: 4px 8px; }
-            .av-btn { padding: 4px 6px; font-size: 12px; }
-            .av-turn { min-width: 50px; font-size: 10px; }
-            header { padding: 0.5rem 1rem; }
+            header { padding: 0.5rem 0.8rem; height: 40px; }
+            #viewer { height: calc(100vh - 40px); top: 40px; }
+            .av-graph-bar { height: 44px; }
+            .av-toolbar { padding: 6px 8px; grid-template-columns: 1fr; gap: 6px; justify-items: center; }
+            .av-toolbar-left, .av-toolbar-right { display: none; }
+            .av-toolbar-center { gap: 4px; }
+            .av-btn { padding: 10px 14px; font-size: 16px; min-height: 40px; min-width: 40px; display: flex; align-items: center; justify-content: center; }
+            .av-play { min-width: 44px; min-height: 40px; }
+            .av-turn { font-size: 12px; min-width: 60px; }
         }
     </style>
 </head>
