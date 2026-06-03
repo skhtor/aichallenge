@@ -65,6 +65,7 @@ const AntsVisualizer = (() => {
         const name = this.playerNames[i] || `Player ${i + 1}`;
         fogSelect.innerHTML += `<option value="${i}">${name}</option>`;
       }
+      if (this._mobileFog) this._mobileFog.innerHTML = fogSelect.innerHTML;
       // Precompute ant counts per player per turn
       const numP = this.scores.length || (this.replay.replaydata || this.replay).players || 2;
       this.antCounts = Array.from({length: numP}, () => new Int16Array(this.maxTurn + 1));
@@ -99,7 +100,6 @@ const AntsVisualizer = (() => {
           this.hillsRazed[p][tt] = razed;
         }
       }
-      this.loop = false;
       // Read initial turn from URL
       const urlT = parseInt(new URL(window.location).searchParams.get('t'));
       this.turn = (urlT >= 0 && urlT <= this.maxTurn) ? urlT : 0;
@@ -247,21 +247,52 @@ const AntsVisualizer = (() => {
             <button class="av-btn av-play" data-action="play">▶︎</button>
             <button class="av-btn" data-action="fwd">⏩︎</button>
             <button class="av-btn" data-action="end">⏭︎</button>
-            <span class="av-turn">0 / 0</span>
           </div>
           <div class="av-toolbar-right">
-            <button class="av-btn av-loop-btn" data-action="loop" title="Toggle loop (L)">🔁</button>
-            <button class="av-btn av-speed" data-action="slower">−</button>
-            <span class="av-turn av-speed-label">1×</span>
-            <button class="av-btn av-speed" data-action="faster">+</button>
+            <select class="av-speed-select">
+              <option value="0.25">0.25×</option>
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+              <option value="8">8×</option>
+              <option value="16">16×</option>
+            </select>
           </div>
         </div>
       `;
       this.container.appendChild(this.controls);
       this.graphBar = this.controls.querySelector('.av-graph-bar');
-      this.turnLabel = this.controls.querySelector('.av-turn');
       this.playBtn = this.controls.querySelector('[data-action="play"]');
-      this.speedLabel = this.controls.querySelector('.av-speed-label');
+      this.speedSelect = this.controls.querySelector('.av-speed-select');
+
+      // Mobile overlay selects (positioned above controls)
+      this._mobileOverlay = document.createElement('div');
+      this._mobileOverlay.className = 'av-mobile-overlay';
+      this._mobileOverlay.innerHTML = `
+        <select class="av-mobile-fog"></select>
+        <select class="av-mobile-speed">
+          <option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
+          <option value="16">16×</option>
+        </select>
+      `;
+      this.container.appendChild(this._mobileOverlay);
+      this._mobileFog = this._mobileOverlay.querySelector('.av-mobile-fog');
+      this._mobileSpeed = this._mobileOverlay.querySelector('.av-mobile-speed');
+      this._mobileFog.addEventListener('change', e => {
+        this.fogPlayer = parseInt(e.target.value);
+        this.controls.querySelector('.av-fog-select').value = this.fogPlayer;
+        if (!this.playing) this._render();
+      });
+      this._mobileSpeed.addEventListener('change', e => {
+        this.speed = parseFloat(e.target.value);
+        this.speedSelect.value = this.speed;
+      });
     }
 
     _bindEvents() {
@@ -278,13 +309,16 @@ const AntsVisualizer = (() => {
           case 'fwd': this._setTurn(Math.min(this.maxTurn, this.turn + 1), true); break;
           case 'slower': this._changeSpeed(-1); break;
           case 'faster': this._changeSpeed(1); break;
-          case 'loop': this._toggleLoop(); break;
         }
       });
 
       this.controls.querySelector('.av-fog-select').addEventListener('change', e => {
         this.fogPlayer = parseInt(e.target.value);
         if (!this.playing) this._render();
+      });
+
+      this.speedSelect.addEventListener('change', e => {
+        this.speed = parseFloat(e.target.value);
       });
 
       this.graphBar.addEventListener('mousedown', e => {
@@ -302,7 +336,6 @@ const AntsVisualizer = (() => {
         if (e.key === 'ArrowLeft') this._setTurn(Math.max(0, this.turn - 1), true);
         if (e.key === '?') this._toggleHelp();
         if (e.key === 'Escape' && this._helpOverlay) this._toggleHelp();
-        if (e.key === 'l' || e.key === 'L') this._toggleLoop();
       });
 
       this.container.setAttribute('tabindex', '0');
@@ -313,6 +346,28 @@ const AntsVisualizer = (() => {
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+
+        // Overlay speed button (mobile)
+        if (this._overlaySpeedRect) {
+          const r = this._overlaySpeedRect;
+          if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+            this._changeSpeed(1);
+            if (!this.playing) this._render();
+            return;
+          }
+        }
+        // Overlay fog button (mobile)
+        if (this._overlayFogRect) {
+          const r = this._overlayFogRect;
+          if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+            const numP = this.scores ? this.scores.length : 0;
+            this.fogPlayer = (this.fogPlayer + 2) % (numP + 1) - 1;
+            this.controls.querySelector('.av-fog-select').value = this.fogPlayer;
+            if (!this.playing) this._render();
+            return;
+          }
+        }
+
         // Check if click is in scoreboard area
         const pad = 10, rowH = 24, panelW = 280;
         const tableTop = pad + 6;
@@ -454,6 +509,12 @@ const AntsVisualizer = (() => {
     }
 
     _togglePlay() {
+      // Restart from beginning if at end
+      if (!this.playing && this.turn >= this.maxTurn) {
+        this.turn = 0;
+        this.turnFrac = 0;
+        this._render();
+      }
       this.playing = !this.playing;
       this.playBtn.textContent = this.playing ? '⏸︎' : '▶︎';
       if (this.playing) {
@@ -490,7 +551,7 @@ const AntsVisualizer = (() => {
       const i = speeds.indexOf(this.speed);
       const next = Math.max(0, Math.min(speeds.length - 1, i + dir));
       this.speed = speeds[next];
-      this.speedLabel.textContent = this.speed + '×';
+      this.speedSelect.value = this.speed;
     }
 
     _seekFromGraph(e) {
@@ -567,13 +628,6 @@ const AntsVisualizer = (() => {
       </div>`;
       this._helpOverlay.addEventListener('click', () => this._toggleHelp());
       this.container.appendChild(this._helpOverlay);
-    }
-
-    _toggleLoop() {
-      this.loop = !this.loop;
-      const btn = this.controls.querySelector('.av-loop-btn');
-      btn.style.opacity = this.loop ? '1' : '0.4';
-      if (!this.playing) this._updateTurnLabel();
     }
 
     _showEndSummary() {
@@ -698,13 +752,6 @@ const AntsVisualizer = (() => {
     }
 
     _updateTurnLabel() {
-      let text = `${this.turn} / ${this.maxTurn}`;
-      if (this.turn >= this.maxTurn && this.replay) {
-        const cutoff = (this.replay.replaydata || this.replay).cutoff;
-        if (cutoff) text += ` — ${cutoff}`;
-      }
-      if (this.loop) text += ' 🔁';
-      this.turnLabel.textContent = text;
       // Update URL with current turn (throttled)
       if (this.replay) {
         const now = performance.now();
@@ -731,9 +778,6 @@ const AntsVisualizer = (() => {
           last = now - (elapsed % interval);
           this.turn++;
           if (this.turn >= this.maxTurn) {
-            if (this.loop) {
-              this.turn = 0;
-            } else {
               this.turn = this.maxTurn;
               this.turnFrac = 0;
               this.playing = false;
@@ -742,7 +786,6 @@ const AntsVisualizer = (() => {
               this._render();
               this._showEndSummary();
               return;
-            }
           }
           this._updateTurnLabel();
         }
@@ -1070,10 +1113,15 @@ const AntsVisualizer = (() => {
 
       // Draw scoreboard
       this._drawScoreboard(ctx);
+      this._drawOverlayControls(ctx);
       if (this._graphTurnCache !== this.turn) {
         this._graphTurnCache = this.turn;
         this._drawGraphBar();
       }
+    }
+
+    _drawOverlayControls(ctx) {
+      // HTML overlay selects handle this on mobile
     }
 
     _drawScoreboard(ctx) {
