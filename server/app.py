@@ -755,19 +755,31 @@ def api_matches(bot: str = None, min_players: int = None, max_players: int = Non
 
 
 @app.get("/api/elo_history/{bot_name}")
-def api_elo_history(bot_name: str):
+def api_elo_history(bot_name: str, hours: int = None):
     with db_readonly() as conn:
         cur = dict_cursor(conn)
         cur.execute("SELECT id FROM bots WHERE name = %s", (bot_name,))
         bot = cur.fetchone()
         if not bot:
             raise HTTPException(404, "Bot not found")
+        if hours:
+            cur.execute(
+                "SELECT elo, recorded_at FROM elo_history WHERE bot_id = %s AND recorded_at::timestamptz > NOW() - make_interval(hours => %s) ORDER BY id",
+                (bot["id"], hours)
+            )
+        else:
+            cur.execute(
+                "SELECT elo, recorded_at FROM elo_history WHERE bot_id = %s ORDER BY id",
+                (bot["id"],)
+            )
+        history = cur.fetchall()
+        # Also get version change timestamps
         cur.execute(
-            "SELECT elo, recorded_at FROM elo_history WHERE bot_id = %s ORDER BY id DESC LIMIT 50",
+            "SELECT version, uploaded_at FROM bot_versions WHERE bot_id = %s ORDER BY version",
             (bot["id"],)
         )
-        history = cur.fetchall()
-    return [dict(h) for h in reversed(history)]
+        versions = cur.fetchall()
+    return {"history": [dict(h) for h in history], "versions": [dict(v) for v in versions]}
 
 
 @app.get("/api/sparklines")
