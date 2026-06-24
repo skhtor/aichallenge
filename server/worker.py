@@ -93,10 +93,10 @@ def run_single_game(bot_ids, bot_names, bot_versions, bot_languages, num_players
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300,
+            cmd, capture_output=True, text=True,
             cwd=str(ANTS_DIR)
         )
-    except subprocess.TimeoutExpired:
+    except Exception:
         return None
 
     replay_files = list(log_dir.glob("*.replay"))
