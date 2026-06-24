@@ -1,5 +1,3 @@
-var fs = require('fs')
-
 exports.ants = {
 	'bot': null,
 	'currentTurn': -1,
@@ -121,11 +119,10 @@ exports.ants = {
 	'finishTurn': function() {
 		for (var i = 0, len = this.orders.length; i < len; ++i) {
 			var order = this.orders[i];
-			fs.writeSync(process.stdout.fd, 'o '+order.row+' '+order.col+' '+order.direction+'\n');
+			process.stdout.write('o '+order.row+' '+order.col+' '+order.direction+'\n');
 		}
 		this.orders = [];
-		fs.writeSync(process.stdout.fd,'go\n');
-		process.stdout.flush();
+		process.stdout.write('go\n');
 	},
 	'tileInDirection': function(row, col, direction) {
 		var rowd = 0;

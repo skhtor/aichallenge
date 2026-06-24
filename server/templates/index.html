@@ -336,7 +336,7 @@
                 <thead><tr><th>Language</th><th>Entry Point</th><th>Compiled</th></tr></thead>
                 <tbody>
                     <tr><td>Python</td><td><code>MyBot.py</code></td><td>No</td></tr>
-                    <tr><td>C++</td><td><code>MyBot.cc</code> / <code>.cpp</code></td><td>g++ -O2</td></tr>
+                    <tr><td>C++</td><td><code>MyBot.cc</code> / <code>.cpp</code></td><td>g++ -O2 -std=c++17</td></tr>
                     <tr><td>Java</td><td><code>MyBot.java</code></td><td>javac</td></tr>
                     <tr><td>Go</td><td><code>MyBot.go</code></td><td>go build</td></tr>
                     <tr><td>JavaScript</td><td><code>MyBot.js</code></td><td>No</td></tr>
@@ -345,7 +345,18 @@
                 </tbody>
             </table>
             <p style="color:#aaa;font-size:0.85rem;margin-bottom:1rem;">Upload a single source file or a <code style="background:#111;padding:0.15rem 0.4rem;border-radius:3px;color:#81c784;">.zip</code> containing your source files. Your bot joins the match queue immediately.</p>
-            <p style="font-size:0.85rem;">📦 <a href="https://github.com/aichallenge/aichallenge/tree/epsilon/ants/dist/starter_bots" style="color:#81c784;">Starter bots →</a></p>
+
+            <h4 style="color:#fff;margin:1rem 0 0.5rem;">💻 Upload via curl</h4>
+            <pre style="background:#111;padding:0.8rem;border-radius:6px;font-size:0.8rem;overflow-x:auto;color:#81c784;margin-bottom:0.5rem;"><code># Register your team
+curl -X POST http://localhost:5001/api/register -d "name=MyTeam"
+
+# Upload a bot (use the token from registration)
+curl -X POST http://localhost:5001/api/upload \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "bot_name=MyBot" \
+  -F "file=@mybot.zip"</code></pre>
+
+            <p style="font-size:0.85rem;">📦 <a href="https://github.com/skhtor/aichallenge/tree/epsilon/ants/dist/starter_bots" style="color:#81c784;">Starter bots →</a></p>
         </div>
     </div>
 

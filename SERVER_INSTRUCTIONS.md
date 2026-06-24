@@ -7,7 +7,7 @@ cd /path/to/aichallenge
 docker-compose up --build
 ```
 
-The server will be available at **http://localhost:5000**
+The server will be available at **http://localhost:5001**
 
 This starts two containers:
 - **web** — FastAPI web server (leaderboard, uploads, replays)
@@ -24,7 +24,7 @@ source .venv/bin/activate
 pip install fastapi uvicorn[standard] python-multipart jinja2
 
 # Start the server
-uvicorn app:app --host 0.0.0.0 --port 5000
+uvicorn app:app --host 0.0.0.0 --port 5001
 ```
 
 In a separate terminal, start the worker:
@@ -34,7 +34,7 @@ source .venv/bin/activate
 python -u worker.py
 ```
 
-Server runs at **http://localhost:5000**
+Server runs at **http://localhost:5001**
 
 ### Requirements for local mode
 - Python 3.10+
@@ -45,7 +45,7 @@ Server runs at **http://localhost:5000**
 ## Uploading a Bot
 
 ### Via Web UI
-1. Go to http://localhost:5000
+1. Go to http://localhost:5001
 2. Register a team (enter a team name, save the token)
 3. Fill in the upload form: team token, bot name, and zip file
 4. The server validates the bot with a 50-turn test match before accepting
@@ -54,13 +54,13 @@ Server runs at **http://localhost:5000**
 
 Register a team:
 ```bash
-curl -X POST http://localhost:5000/api/register -d "name=MyTeam"
+curl -X POST http://localhost:5001/api/register -d "name=MyTeam"
 # Returns: {"team": "MyTeam", "token": "your-token-here"}
 ```
 
 Upload a bot:
 ```bash
-curl -X POST http://localhost:5000/api/upload \
+curl -X POST http://localhost:5001/api/upload \
   -H "Authorization: Bearer your-token-here" \
   -F "bot_name=MyBot" \
   -F "file=@myBot_cpp_upload.zip"
@@ -70,11 +70,12 @@ curl -X POST http://localhost:5000/api/upload \
 | Language   | Entry Point    | Compiled |
 |------------|---------------|----------|
 | Python     | MyBot.py      | No       |
-| C++        | MyBot.cc/cpp  | Yes (g++ -O2) |
+| C++        | MyBot.cc/cpp  | Yes (g++ -O2 -std=c++17) |
 | Java       | MyBot.java    | Yes (javac) |
 | Go         | MyBot.go      | Yes (go build) |
 | JavaScript | MyBot.js      | No       |
 | Ruby       | MyBot.rb      | No       |
+| C#         | MyBot.cs      | Yes (mcs) |
 
 ### What to upload
 - A `.zip` file containing your source files (no subdirectories needed)
