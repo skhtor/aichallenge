@@ -348,12 +348,13 @@
 
             <h4 style="color:#fff;margin:1rem 0 0.5rem;">💻 Upload via curl</h4>
             <pre style="background:#111;padding:0.8rem;border-radius:6px;font-size:0.8rem;overflow-x:auto;color:#81c784;margin-bottom:0.5rem;"><code># Register your team
-curl -X POST http://localhost:5001/api/register -d "name=MyTeam"
+curl -X POST https://ants.sass.sh/api/register -d "name=MyTeam"
 
 # Upload a bot (use the token from registration)
-curl -X POST http://localhost:5001/api/upload \
+curl -X POST https://ants.sass.sh/api/upload \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -F "bot_name=MyBot" \
+  -F "language=python|cpp|java|go|javascript|ruby|csharp" \
   -F "file=@mybot.zip"</code></pre>
 
             <p style="font-size:0.85rem;">📦 <a href="https://github.com/skhtor/aichallenge/tree/epsilon/ants/dist/starter_bots" style="color:#81c784;">Starter bots →</a></p>
